@@ -14,8 +14,6 @@ function dateRange(start, end) {
   return dates
 }
 
-const WEEKDAY_ID = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
-
 export default function AdminDashboard() {
   const navigate = useNavigate()
   const printRef = useRef(null)
@@ -38,26 +36,25 @@ export default function AdminDashboard() {
   const [npEnd, setNpEnd] = useState('')
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) {
-        navigate('/admin/login')
-      } else {
-        setCheckingAuth(false)
-        loadEmployees()
-        loadPeriods()
-      }
-    })
+    const isAuthed = localStorage.getItem('jk_admin_auth') === 'true'
+    if (!isAuthed) {
+      navigate('/')
+      return
+    }
+    setCheckingAuth(false)
+    loadEmployees()
+    loadPeriods()
   }, [])
 
   async function loadEmployees() {
-    const { data } = await supabase.from('employees').select('*').order('name')
+    const { data } = await supabase.from('jk_employees').select('*').order('name')
     setEmployees(data || [])
   }
 
   async function loadPeriods() {
-    const { data } = await supabase.from('periods').select('*').order('start_date', { ascending: false })
+    const { data } = await supabase.from('jk_periods').select('*').order('start_date', { ascending: false })
     setPeriods(data || [])
-    if (data && data.length > 0 && !activePeriod) {
+    if (data && data.length > 0) {
       selectPeriod(data[0])
     }
   }
@@ -65,14 +62,14 @@ export default function AdminDashboard() {
   async function selectPeriod(period) {
     setActivePeriod(period)
     const { data: pe } = await supabase
-      .from('period_employees')
-      .select('*, employees(*)')
+      .from('jk_period_employees')
+      .select('*, jk_employees(*)')
       .eq('period_id', period.id)
       .order('sort_order')
     setPeriodEmployees(pe || [])
 
     const { data: sh } = await supabase
-      .from('shifts')
+      .from('jk_shifts')
       .select('*')
       .eq('period_id', period.id)
     setShifts(sh || [])
@@ -82,14 +79,15 @@ export default function AdminDashboard() {
     e.preventDefault()
     if (!npTitle || !npLocation || !npStart || !npEnd) return
     const { data, error } = await supabase
-      .from('periods')
+      .from('jk_periods')
       .insert({ title: npTitle, location: npLocation, start_date: npStart, end_date: npEnd })
       .select()
       .single()
     if (!error) {
       setShowNewPeriod(false)
       setNpTitle(''); setNpLocation(''); setNpStart(''); setNpEnd('')
-      await loadPeriods()
+      const { data: updated } = await supabase.from('jk_periods').select('*').order('start_date', { ascending: false })
+      setPeriods(updated || [])
       selectPeriod(data)
     }
   }
@@ -98,7 +96,7 @@ export default function AdminDashboard() {
     e.preventDefault()
     if (!newEmpName.trim()) return
     const { data, error } = await supabase
-      .from('employees')
+      .from('jk_employees')
       .insert({ name: newEmpName.trim(), position: newEmpPosition.trim() })
       .select()
       .single()
@@ -112,7 +110,7 @@ export default function AdminDashboard() {
   async function addEmployeeToPeriod(employeeId) {
     if (!activePeriod || !employeeId) return
     const maxOrder = periodEmployees.reduce((m, pe) => Math.max(m, pe.sort_order), 0)
-    const { error } = await supabase.from('period_employees').insert({
+    const { error } = await supabase.from('jk_period_employees').insert({
       period_id: activePeriod.id,
       employee_id: employeeId,
       sort_order: maxOrder + 1,
@@ -124,15 +122,15 @@ export default function AdminDashboard() {
   }
 
   async function removeFromPeriod(pe) {
-    if (!confirm(`Hapus ${pe.employees.name} dari jadwal ini?`)) return
-    await supabase.from('period_employees').delete().eq('id', pe.id)
-    await supabase.from('shifts').delete().eq('period_id', activePeriod.id).eq('employee_id', pe.employee_id)
+    if (!confirm(`Hapus ${pe.jk_employees.name} dari jadwal ini?`)) return
+    await supabase.from('jk_period_employees').delete().eq('id', pe.id)
+    await supabase.from('jk_shifts').delete().eq('period_id', activePeriod.id).eq('employee_id', pe.employee_id)
     selectPeriod(activePeriod)
   }
 
   async function updateKeterangan(pe, value) {
     setPeriodEmployees((prev) => prev.map((p) => p.id === pe.id ? { ...p, keterangan: value } : p))
-    await supabase.from('period_employees').update({ keterangan: value }).eq('id', pe.id)
+    await supabase.from('jk_period_employees').update({ keterangan: value }).eq('id', pe.id)
   }
 
   async function updateShiftCode(employeeId, isoDate, code) {
@@ -143,7 +141,7 @@ export default function AdminDashboard() {
       }
       return [...prev, { employee_id: employeeId, shift_date: isoDate, code, period_id: activePeriod.id }]
     })
-    await supabase.from('shifts').upsert({
+    await supabase.from('jk_shifts').upsert({
       period_id: activePeriod.id,
       employee_id: employeeId,
       shift_date: isoDate,
@@ -151,9 +149,9 @@ export default function AdminDashboard() {
     }, { onConflict: 'period_id,employee_id,shift_date' })
   }
 
-  async function handleLogout() {
-    await supabase.auth.signOut()
-    navigate('/admin/login')
+  function handleLogout() {
+    localStorage.removeItem('jk_admin_auth')
+    navigate('/')
   }
 
   const dates = activePeriod ? dateRange(activePeriod.start_date, activePeriod.end_date) : []
@@ -161,7 +159,7 @@ export default function AdminDashboard() {
   const groupedByPosition = useMemo(() => {
     const groups = {}
     periodEmployees.forEach((pe) => {
-      const pos = pe.employees.position || 'Lainnya'
+      const pos = pe.jk_employees.position || 'Lainnya'
       if (!groups[pos]) groups[pos] = []
       groups[pos].push(pe)
     })
@@ -183,7 +181,6 @@ export default function AdminDashboard() {
 
       <div className="p-4 max-w-full overflow-x-auto">
 
-        {/* Pilih / buat periode */}
         <div className="bg-white rounded-xl shadow p-4 mb-4">
           <div className="flex items-center justify-between mb-3">
             <p className="font-semibold text-ink text-sm">Periode Jadwal</p>
@@ -220,7 +217,6 @@ export default function AdminDashboard() {
 
         {activePeriod && (
           <>
-            {/* Kelola karyawan */}
             <div className="bg-white rounded-xl shadow p-4 mb-4">
               <p className="font-semibold text-ink text-sm mb-3">Kelola Karyawan</p>
               <form onSubmit={createEmployee} className="flex flex-wrap gap-2 mb-3">
@@ -239,7 +235,6 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* Export */}
             <div className="mb-4">
               <button
                 onClick={() => exportElementAsJpg(printRef, `${activePeriod.title}-${activePeriod.location}`)}
@@ -249,7 +244,6 @@ export default function AdminDashboard() {
               </button>
             </div>
 
-            {/* Tabel jadwal (ini yang di-export) */}
             <div className="overflow-x-auto bg-white rounded-xl shadow">
               <div ref={printRef} className="p-6 bg-white min-w-max">
                 <h2 className="text-center font-bold text-ink text-base">
@@ -287,8 +281,8 @@ export default function AdminDashboard() {
                           <tr key={pe.id}>
                             <td className="border border-slate-400 text-center">{idx + 1}</td>
                             <td className="border border-slate-400 px-2 py-1 flex items-center justify-between gap-1">
-                              <span>{pe.employees.name}</span>
-                              <button onClick={() => removeFromPeriod(pe)} className="text-red-400 text-[10px] no-print">✕</button>
+                              <span>{pe.jk_employees.name}</span>
+                              <button onClick={() => removeFromPeriod(pe)} className="text-red-400 text-[10px]">✕</button>
                             </td>
                             {dates.map((d) => {
                               const iso = d.toISOString().slice(0, 10)
@@ -335,4 +329,4 @@ export default function AdminDashboard() {
       </div>
     </div>
   )
-                   }
+              }
