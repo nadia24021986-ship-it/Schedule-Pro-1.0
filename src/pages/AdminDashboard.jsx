@@ -345,3 +345,226 @@ export default function AdminDashboard() {
         <div className="bg-white rounded-xl shadow p-4 mb-4">
           <div className="flex items-center justify-between mb-3">
             <p className="font-semibold text-ink text-sm">Periode Jadwal</p>
+            <button
+              onClick={() => setShowNewPeriod((v) => !v)}
+              className="text-xs bg-amber-500 text-white px-3 py-1.5 rounded-lg font-medium"
+            >
+              + Periode Baru
+            </button>
+          </div>
+
+          {showNewPeriod && (
+            <form onSubmit={createPeriod} className="grid grid-cols-2 gap-2 mb-3 bg-slate-50 p-3 rounded-lg">
+              <input placeholder="Judul (mis. 20 Juli - 20 Agustus 2026)" value={npTitle} onChange={(e) => setNpTitle(e.target.value)} className="col-span-2 border rounded px-2 py-1.5 text-sm" />
+              <input
+                list="location-suggestions"
+                placeholder="Lokasi pertama (mis. Tomaco)"
+                value={npLocation}
+                onChange={(e) => setNpLocation(e.target.value)}
+                className="col-span-2 border rounded px-2 py-1.5 text-sm"
+              />
+              <datalist id="location-suggestions">
+                {allLocations.map((loc) => (<option key={loc} value={loc} />))}
+              </datalist>
+              <input type="date" value={npStart} onChange={(e) => setNpStart(e.target.value)} className="border rounded px-2 py-1.5 text-sm" />
+              <input type="date" value={npEnd} onChange={(e) => setNpEnd(e.target.value)} className="border rounded px-2 py-1.5 text-sm" />
+              <p className="col-span-2 text-xs text-slate-400">
+                Kalau lokasi ini sudah pernah dipakai, susunan karyawan otomatis dipakai lagi — kolom shift & keterangan dikosongkan, tanggal mengikuti periode baru.
+              </p>
+              <button className="col-span-2 bg-ink text-white rounded py-1.5 text-sm font-medium">Simpan Periode</button>
+            </form>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            {periods.map((p) => (
+              <div key={p.id} className={`flex items-center rounded-full border text-xs ${activePeriod?.id === p.id ? 'bg-ink text-white border-ink' : 'border-slate-300 text-slate-600'}`}>
+                <button onClick={() => selectPeriod(p)} className="px-3 py-1.5">
+                  {p.title}
+                </button>
+                <button onClick={() => deletePeriod(p)} className={`pr-2.5 ${activePeriod?.id === p.id ? 'text-red-300' : 'text-red-400'}`}>✕</button>
+              </div>
+            ))}
+            {periods.length === 0 && <p className="text-xs text-slate-400">Belum ada periode. Buat periode baru dulu.</p>}
+          </div>
+        </div>
+
+        {activePeriod && (
+          <>
+            <div className="bg-white rounded-xl shadow p-4 mb-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="font-semibold text-ink text-sm">Lokasi dalam Periode Ini</p>
+                <button
+                  onClick={() => setShowNewSchedule((v) => !v)}
+                  className="text-xs bg-amber-500 text-white px-3 py-1.5 rounded-lg font-medium"
+                >
+                  + Tambah Lokasi
+                </button>
+              </div>
+
+              {showNewSchedule && (
+                <form onSubmit={createSchedule} className="flex gap-2 mb-3 bg-slate-50 p-3 rounded-lg">
+                  <input
+                    list="location-suggestions"
+                    placeholder="Nama lokasi baru"
+                    value={nsLocation}
+                    onChange={(e) => setNsLocation(e.target.value)}
+                    className="flex-1 border rounded px-2 py-1.5 text-sm"
+                  />
+                  <button className="bg-ink text-white px-3 py-1.5 rounded text-sm font-medium">Tambah</button>
+                </form>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                {schedules.map((s) => (
+                  <div key={s.id} className={`flex items-center rounded-full border text-xs ${activeSchedule?.id === s.id ? 'bg-amber-500 text-white border-amber-500' : 'border-slate-300 text-slate-600'}`}>
+                    <button onClick={() => selectSchedule(s)} className="px-3 py-1.5">{s.location}</button>
+                    <button onClick={() => deleteSchedule(s)} className={`pr-2.5 ${activeSchedule?.id === s.id ? 'text-red-100' : 'text-red-400'}`}>✕</button>
+                  </div>
+                ))}
+                {schedules.length === 0 && <p className="text-xs text-slate-400">Belum ada lokasi di periode ini.</p>}
+              </div>
+            </div>
+
+            {activeSchedule && (
+              <>
+                <div className="bg-white rounded-xl shadow p-4 mb-4">
+                  <p className="font-semibold text-ink text-sm mb-3">Kelola Karyawan</p>
+                  <form onSubmit={createEmployee} className="flex flex-wrap gap-2">
+                    <input placeholder="Nama baru" value={newEmpName} onChange={(e) => setNewEmpName(e.target.value)} className="border rounded px-2 py-1.5 text-sm flex-1 min-w-[120px]" />
+                    <input placeholder="Jabatan" value={newEmpPosition} onChange={(e) => setNewEmpPosition(e.target.value)} className="border rounded px-2 py-1.5 text-sm flex-1 min-w-[120px]" />
+                    <button className="bg-amber-500 text-white px-3 py-1.5 rounded text-sm font-medium">Tambah & Masukkan</button>
+                  </form>
+                </div>
+
+                <div className="mb-4 flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => exportElementAsJpg(printRef, `${activePeriod.title}-${activeSchedule.location}`)}
+                    className="bg-ink text-white px-4 py-2 rounded-lg text-sm font-semibold"
+                  >
+                    📷 Export JPG
+                  </button>
+                  <button
+                    onClick={handleSavePeriod}
+                    className="bg-amber-500 text-white px-4 py-2 rounded-lg text-sm font-semibold"
+                  >
+                    💾 Simpan Periode
+                  </button>
+                  <button
+                    onClick={() => setPenMode((v) => !v)}
+                    className={`px-4 py-2 rounded-lg text-sm font-semibold border-2 ${penMode ? 'bg-red-500 text-white border-red-500' : 'bg-white text-red-500 border-red-400'}`}
+                  >
+                    🖊️ {penMode ? 'Mode Tanggal Merah: Aktif' : 'Tandai Tanggal Merah'}
+                  </button>
+                  {penMode && (
+                    <span className="text-xs text-red-500">Klik kolom tanggal di tabel untuk menandai/membatalkan.</span>
+                  )}
+                  {saveMessage && (
+                    <span className="text-sm text-green-600 font-medium">✓ {saveMessage}</span>
+                  )}
+                </div>
+
+                <div className="overflow-x-auto bg-white rounded-xl shadow">
+                  <div ref={printRef} className="p-6 bg-white min-w-max">
+                    <h2 className="text-center font-bold text-ink text-lg">
+                      JADWAL KERJA PERSONEL CATERING {activePeriod.title.toUpperCase()}
+                    </h2>
+                    <h3 className="text-center font-bold text-ink text-base mb-4">
+                      {activeSchedule.location.toUpperCase()}
+                    </h3>
+
+                    <table className="border-collapse text-sm">
+                      <thead>
+                        <tr>
+                          <th className="border-2 border-slate-500 px-2 py-2 bg-slate-200 text-slate-800 w-8">NO</th>
+                          <th className="border-2 border-slate-500 px-2 py-2 bg-slate-200 text-slate-800 min-w-[150px]">NAMA</th>
+                          {dates.map((d) => {
+                            const iso = d.toISOString().slice(0, 10)
+                            const isWeekend = d.getDay() === 0 || d.getDay() === 6
+                            const isCustom = (activeSchedule.custom_holidays || []).includes(iso)
+                            const holiday = isHoliday(d) || isCustom
+                            const cellClass = holiday ? 'bg-red-200' : isWeekend ? 'bg-weekend' : 'bg-slate-200'
+                            return (
+                              <th
+                                key={iso}
+                                onClick={() => penMode && toggleCustomHoliday(iso)}
+                                className={`border-2 border-slate-500 px-1 py-2 w-8 text-slate-800 ${cellClass} ${penMode ? 'cursor-pointer hover:bg-red-300' : ''}`}
+                              >
+                                {d.getDate()}
+                              </th>
+                            )
+                          })}
+                          <th className="border-2 border-slate-500 px-2 py-2 bg-slate-200 text-slate-800 min-w-[130px]">KETERANGAN</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(groupedByPosition).map(([position, list]) => (
+                          <>
+                            <tr key={position}>
+                              <td colSpan={dates.length + 3} className="border-2 border-slate-500 px-2 py-1.5 font-bold bg-slate-100 text-slate-800 italic">
+                                {position}
+                              </td>
+                            </tr>
+                            {list.map((se) => {
+                              runningNumber += 1
+                              return (
+                                <tr key={se.id}>
+                                  <td className="border-2 border-slate-500 text-center text-slate-800 font-medium">{runningNumber}</td>
+                                  <td className="border-2 border-slate-500 px-2 py-1.5 flex items-center justify-between gap-1 text-slate-800 font-medium">
+                                    <span>{se.jk_employees.name}</span>
+                                    <button onClick={() => removeFromSchedule(se)} className="no-export text-red-400 text-[10px]">✕</button>
+                                  </td>
+                                  {dates.map((d) => {
+                                    const iso = d.toISOString().slice(0, 10)
+                                    const isWeekend = d.getDay() === 0 || d.getDay() === 6
+                                    const isCustom = (activeSchedule.custom_holidays || []).includes(iso)
+                                    const holiday = isHoliday(d) || isCustom
+                                    const cellClass = holiday ? 'bg-red-100' : isWeekend ? 'bg-weekend' : ''
+                                    const shift = shifts.find((s) => s.employee_id === se.employee_id && s.shift_date === iso)
+                                    return (
+                                      <td key={iso} className={`border-2 border-slate-500 p-0 ${cellClass}`}>
+                                        <input
+                                          defaultValue={shift?.code || ''}
+                                          onBlur={(e) => updateShiftCode(se.employee_id, iso, e.target.value)}
+                                          className="w-8 text-center bg-transparent outline-none py-1.5 mono font-bold text-slate-900"
+                                        />
+                                      </td>
+                                    )
+                                  })}
+                                  <td className="border-2 border-slate-500 p-0">
+                                    <input
+                                      defaultValue={se.keterangan || ''}
+                                      onBlur={(e) => updateKeterangan(se, e.target.value)}
+                                      className="w-full px-2 py-1.5 outline-none bg-transparent text-slate-800"
+                                    />
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </>
+                        ))}
+                      </tbody>
+                    </table>
+
+                    <div className="flex justify-between items-end mt-10">
+                      <p className="text-[11px] text-slate-400">hendrosapp.com | Schedule Pro 1.0</p>
+                      <div className="flex gap-10 text-sm">
+                        <div className="text-center">
+                          <p className="mb-10">Diperiksa,</p>
+                          <p className="border-t border-slate-400 pt-1 w-24">( &nbsp; )</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="mb-10">Disetujui,</p>
+                          <p className="border-t border-slate-400 pt-1 w-24">( &nbsp; )</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
