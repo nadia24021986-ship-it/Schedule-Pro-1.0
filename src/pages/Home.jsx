@@ -19,7 +19,7 @@ export default function Home() {
   const [query, setQuery] = useState('')
   const [allEmployees, setAllEmployees] = useState([])
   const [selected, setSelected] = useState(null)
-  const [period, setPeriod] = useState(null)
+  const [scheduleInfo, setScheduleInfo] = useState(null) // { title, start_date, end_date, location, custom_holidays }
   const [shifts, setShifts] = useState([])
   const [keterangan, setKeterangan] = useState('')
   const [loading, setLoading] = useState(false)
@@ -46,26 +46,39 @@ export default function Home() {
     setQuery(emp.name)
     setLoading(true)
 
-    const { data: pe } = await supabase
-      .from('jk_period_employees')
-      .select('*, jk_periods(*)')
+    const { data: se } = await supabase
+      .from('jk_schedule_employees')
+      .select('*, jk_schedules(*, jk_periods(*))')
       .eq('employee_id', emp.id)
 
-    if (!pe || pe.length === 0) {
-      setPeriod(null)
+    if (!se || se.length === 0) {
+      setScheduleInfo(null)
       setShifts([])
       setLoading(false)
       return
     }
 
-    const latest = pe.sort((a, b) => new Date(b.jk_periods.start_date) - new Date(a.jk_periods.start_date))[0]
-    setPeriod(latest.jk_periods)
+    const latest = se.sort(
+      (a, b) => new Date(b.jk_schedules.jk_periods.start_date) - new Date(a.jk_schedules.jk_periods.start_date)
+    )[0]
+
+    const schedule = latest.jk_schedules
+    const period = schedule.jk_periods
+
+    setScheduleInfo({
+      scheduleId: schedule.id,
+      title: period.title,
+      start_date: period.start_date,
+      end_date: period.end_date,
+      location: schedule.location,
+      custom_holidays: schedule.custom_holidays || [],
+    })
     setKeterangan(latest.keterangan || '')
 
     const { data: shiftData } = await supabase
       .from('jk_shifts')
       .select('*')
-      .eq('period_id', latest.jk_periods.id)
+      .eq('schedule_id', schedule.id)
       .eq('employee_id', emp.id)
 
     setShifts(shiftData || [])
@@ -82,14 +95,17 @@ export default function Home() {
     }
   }
 
-  const dates = period ? dateRange(period.start_date, period.end_date) : []
+  const dates = scheduleInfo ? dateRange(scheduleInfo.start_date, scheduleInfo.end_date) : []
 
   return (
     <div className="min-h-screen bg-slate-100 px-4 py-8">
       <div className="max-w-xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-lg font-bold text-ink">Cek Jadwal Kerja</h1>
-          <button onClick={() => setShowAdminModal(true)} className="text-xs text-slate-400 underline">
+        <div className="flex items-start justify-between mb-6">
+          <div>
+            <h1 className="text-lg font-bold text-ink leading-tight">Schedule Pro 1.0</h1>
+            <p className="text-xs text-slate-400">hendrosapp.com</p>
+          </div>
+          <button onClick={() => setShowAdminModal(true)} className="text-xs text-slate-400 underline mt-1">
             Masuk Admin
           </button>
         </div>
@@ -97,7 +113,7 @@ export default function Home() {
         <div className="relative mb-6">
           <input
             value={query}
-            onChange={(e) => { setQuery(e.target.value); setSelected(null); setPeriod(null) }}
+            onChange={(e) => { setQuery(e.target.value); setSelected(null); setScheduleInfo(null) }}
             placeholder="Ketik nama Anda..."
             className="w-full border border-slate-300 rounded-lg px-4 py-3 shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
           />
@@ -127,22 +143,22 @@ export default function Home() {
             <div className="mb-4 pb-4 border-b border-slate-100">
               <p className="text-lg font-bold text-ink">{selected.name}</p>
               <p className="text-sm text-slate-500">{selected.position}</p>
-              {period && <p className="text-sm text-slate-500">Lokasi: {period.location}</p>}
+              {scheduleInfo && <p className="text-sm text-slate-500">Lokasi: {scheduleInfo.location}</p>}
             </div>
 
-            {!period && (
+            {!scheduleInfo && (
               <p className="text-sm text-slate-400">Belum ada jadwal untuk karyawan ini.</p>
             )}
 
-            {period && (
+            {scheduleInfo && (
               <>
-                <p className="text-xs text-slate-400 mb-3">{period.title}</p>
+                <p className="text-xs text-slate-400 mb-3">{scheduleInfo.title}</p>
                 <div className="grid grid-cols-7 gap-1.5">
                   {dates.map((d) => {
                     const iso = d.toISOString().slice(0, 10)
                     const shift = shifts.find((s) => s.shift_date === iso)
                     const isWeekend = d.getDay() === 0 || d.getDay() === 6
-                    const isCustom = (period.custom_holidays || []).includes(iso)
+                    const isCustom = (scheduleInfo.custom_holidays || []).includes(iso)
                     const holiday = isHoliday(d) || isCustom
                     const cellClass = holiday ? 'bg-red-100' : isWeekend ? 'bg-weekend' : 'bg-slate-50'
                     return (
@@ -191,4 +207,4 @@ export default function Home() {
       )}
     </div>
   )
-      }
+                  }
