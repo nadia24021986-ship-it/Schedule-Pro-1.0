@@ -24,6 +24,7 @@ export default function AdminDashboard() {
   const [activePeriod, setActivePeriod] = useState(null)
   const [periodEmployees, setPeriodEmployees] = useState([])
   const [shifts, setShifts] = useState([])
+  const [saveMessage, setSaveMessage] = useState('')
 
   const [newEmpName, setNewEmpName] = useState('')
   const [newEmpPosition, setNewEmpPosition] = useState('')
@@ -49,6 +50,7 @@ export default function AdminDashboard() {
   async function loadEmployees() {
     const { data } = await supabase.from('jk_employees').select('*').order('name')
     setEmployees(data || [])
+    return data || []
   }
 
   async function loadPeriods() {
@@ -75,21 +77,44 @@ export default function AdminDashboard() {
     setShifts(sh || [])
   }
 
+  // Daftar lokasi unik dari periode-periode sebelumnya, untuk saran pencarian
+  const knownLocations = useMemo(() => {
+    const set = new Set(periods.map((p) => p.location).filter(Boolean))
+    return Array.from(set)
+  }, [periods])
+
   async function createPeriod(e) {
     e.preventDefault()
     if (!npTitle || !npLocation || !npStart || !npEnd) return
-    const { data, error } = await supabase
+
+    const { data: newPeriod, error } = await supabase
       .from('jk_periods')
       .insert({ title: npTitle, location: npLocation, start_date: npStart, end_date: npEnd })
       .select()
       .single()
-    if (!error) {
-      setShowNewPeriod(false)
-      setNpTitle(''); setNpLocation(''); setNpStart(''); setNpEnd('')
-      const { data: updated } = await supabase.from('jk_periods').select('*').order('start_date', { ascending: false })
-      setPeriods(updated || [])
-      selectPeriod(data)
+
+    if (error || !newPeriod) return
+
+    // Auto-isi semua karyawan aktif ke periode baru ini
+    const activeEmployees = await loadEmployees()
+    const rows = activeEmployees
+      .filter((emp) => emp.active)
+      .map((emp, idx) => ({
+        period_id: newPeriod.id,
+        employee_id: emp.id,
+        sort_order: idx + 1,
+        keterangan: '',
+      }))
+
+    if (rows.length > 0) {
+      await supabase.from('jk_period_employees').insert(rows)
     }
+
+    setShowNewPeriod(false)
+    setNpTitle(''); setNpLocation(''); setNpStart(''); setNpEnd('')
+    const { data: updated } = await supabase.from('jk_periods').select('*').order('start_date', { ascending: false })
+    setPeriods(updated || [])
+    selectPeriod(newPeriod)
   }
 
   async function createEmployee(e) {
@@ -149,6 +174,13 @@ export default function AdminDashboard() {
     }, { onConflict: 'period_id,employee_id,shift_date' })
   }
 
+  function handleSavePeriod() {
+    // Pastikan input yang sedang aktif ter-blur dulu supaya nilainya tersimpan
+    if (document.activeElement) document.activeElement.blur()
+    setSaveMessage('Periode telah tersimpan.')
+    setTimeout(() => setSaveMessage(''), 3000)
+  }
+
   function handleLogout() {
     localStorage.removeItem('jk_admin_auth')
     navigate('/')
@@ -172,6 +204,9 @@ export default function AdminDashboard() {
 
   if (checkingAuth) return <div className="p-8 text-slate-400">Memuat...</div>
 
+  // Hitung nomor urut berkelanjutan di seluruh grup
+  let runningNumber = 0
+
   return (
     <div className="min-h-screen bg-slate-100">
       <div className="bg-ink text-white px-4 py-3 flex items-center justify-between sticky top-0 z-20">
@@ -194,10 +229,26 @@ export default function AdminDashboard() {
 
           {showNewPeriod && (
             <form onSubmit={createPeriod} className="grid grid-cols-2 gap-2 mb-3 bg-slate-50 p-3 rounded-lg">
-              <input placeholder="Judul (mis. 21 Juni - 20 Juli 2026)" value={npTitle} onChange={(e) => setNpTitle(e.target.value)} className="col-span-2 border rounded px-2 py-1.5 text-sm" />
-              <input placeholder="Lokasi (mis. Tanjung Gading)" value={npLocation} onChange={(e) => setNpLocation(e.target.value)} className="col-span-2 border rounded px-2 py-1.5 text-sm" />
+              <input placeholder="Judul (mis. 21 Juli - 20 Agustus 2026)" value={npTitle} onChange={(e) => setNpTitle(e.target.value)} className="col-span-2 border rounded px-2 py-1.5 text-sm" />
+
+              <input
+                list="location-suggestions"
+                placeholder="Cari / ketik lokasi"
+                value={npLocation}
+                onChange={(e) => setNpLocation(e.target.value)}
+                className="col-span-2 border rounded px-2 py-1.5 text-sm"
+              />
+              <datalist id="location-suggestions">
+                {knownLocations.map((loc) => (
+                  <option key={loc} value={loc} />
+                ))}
+              </datalist>
+
               <input type="date" value={npStart} onChange={(e) => setNpStart(e.target.value)} className="border rounded px-2 py-1.5 text-sm" />
               <input type="date" value={npEnd} onChange={(e) => setNpEnd(e.target.value)} className="border rounded px-2 py-1.5 text-sm" />
+              <p className="col-span-2 text-xs text-slate-400">
+                Semua karyawan aktif akan otomatis dimasukkan ke periode ini — tinggal isi kode shift-nya.
+              </p>
               <button className="col-span-2 bg-ink text-white rounded py-1.5 text-sm font-medium">Simpan Periode</button>
             </form>
           )}
@@ -235,13 +286,22 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            <div className="mb-4">
+            <div className="mb-4 flex items-center gap-2 flex-wrap">
               <button
                 onClick={() => exportElementAsJpg(printRef, `${activePeriod.title}-${activePeriod.location}`)}
                 className="bg-ink text-white px-4 py-2 rounded-lg text-sm font-semibold"
               >
                 📷 Export JPG
               </button>
+              <button
+                onClick={handleSavePeriod}
+                className="bg-amber-500 text-white px-4 py-2 rounded-lg text-sm font-semibold"
+              >
+                💾 Simpan Periode
+              </button>
+              {saveMessage && (
+                <span className="text-sm text-green-600 font-medium">✓ {saveMessage}</span>
+              )}
             </div>
 
             <div className="overflow-x-auto bg-white rounded-xl shadow">
@@ -277,36 +337,39 @@ export default function AdminDashboard() {
                             {position}
                           </td>
                         </tr>
-                        {list.map((pe, idx) => (
-                          <tr key={pe.id}>
-                            <td className="border border-slate-400 text-center">{idx + 1}</td>
-                            <td className="border border-slate-400 px-2 py-1 flex items-center justify-between gap-1">
-                              <span>{pe.jk_employees.name}</span>
-                              <button onClick={() => removeFromPeriod(pe)} className="text-red-400 text-[10px]">✕</button>
-                            </td>
-                            {dates.map((d) => {
-                              const iso = d.toISOString().slice(0, 10)
-                              const isWeekend = d.getDay() === 0 || d.getDay() === 6
-                              const shift = shifts.find((s) => s.employee_id === pe.employee_id && s.shift_date === iso)
-                              return (
-                                <td key={iso} className={`border border-slate-400 p-0 ${isWeekend ? 'bg-weekend' : ''}`}>
-                                  <input
-                                    defaultValue={shift?.code || ''}
-                                    onBlur={(e) => updateShiftCode(pe.employee_id, iso, e.target.value)}
-                                    className="w-7 text-center bg-transparent outline-none py-1 mono"
-                                  />
-                                </td>
-                              )
-                            })}
-                            <td className="border border-slate-400 p-0">
-                              <input
-                                defaultValue={pe.keterangan || ''}
-                                onBlur={(e) => updateKeterangan(pe, e.target.value)}
-                                className="w-full px-2 py-1 outline-none bg-transparent"
-                              />
-                            </td>
-                          </tr>
-                        ))}
+                        {list.map((pe) => {
+                          runningNumber += 1
+                          return (
+                            <tr key={pe.id}>
+                              <td className="border border-slate-400 text-center">{runningNumber}</td>
+                              <td className="border border-slate-400 px-2 py-1 flex items-center justify-between gap-1">
+                                <span>{pe.jk_employees.name}</span>
+                                <button onClick={() => removeFromPeriod(pe)} className="text-red-400 text-[10px]">✕</button>
+                              </td>
+                              {dates.map((d) => {
+                                const iso = d.toISOString().slice(0, 10)
+                                const isWeekend = d.getDay() === 0 || d.getDay() === 6
+                                const shift = shifts.find((s) => s.employee_id === pe.employee_id && s.shift_date === iso)
+                                return (
+                                  <td key={iso} className={`border border-slate-400 p-0 ${isWeekend ? 'bg-weekend' : ''}`}>
+                                    <input
+                                      defaultValue={shift?.code || ''}
+                                      onBlur={(e) => updateShiftCode(pe.employee_id, iso, e.target.value)}
+                                      className="w-7 text-center bg-transparent outline-none py-1 mono"
+                                    />
+                                  </td>
+                                )
+                              })}
+                              <td className="border border-slate-400 p-0">
+                                <input
+                                  defaultValue={pe.keterangan || ''}
+                                  onBlur={(e) => updateKeterangan(pe, e.target.value)}
+                                  className="w-full px-2 py-1 outline-none bg-transparent"
+                                />
+                              </td>
+                            </tr>
+                          )
+                        })}
                       </>
                     ))}
                   </tbody>
@@ -329,4 +392,4 @@ export default function AdminDashboard() {
       </div>
     </div>
   )
-              }
+                            }
