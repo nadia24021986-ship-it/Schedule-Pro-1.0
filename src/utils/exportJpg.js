@@ -1,8 +1,13 @@
-Schedule-Pro-1.0/
-  src/
-    utils/
-      exportJpg.js
-    pages/
-      AdminDashboard.jsx
-      AdminLogin.jsx
-      EmployeeView.jsx
+import html2canvas from 'html2canvas'
+
+export async function exportElementAsJpg(elementRef, filename) {
+  if (!elementRef.current) return
+  const canvas = await html2canvas(elementRef.current, {
+    scale: 2,
+    backgroundColor: '#ffffff',
+  })
+  const link = document.createElement('a')
+  link.download = `${filename}.jpg`
+  link.href = canvas.toDataURL('image/jpeg', 0.95)
+  link.click()
+}
