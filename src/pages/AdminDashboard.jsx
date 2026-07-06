@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient.js'
 import { exportElementAsJpg } from '../utils/exportJpg.js'
+import { isHoliday } from '../utils/holidays.js'
 
 function dateRange(start, end) {
   const dates = []
@@ -25,6 +26,7 @@ export default function AdminDashboard() {
   const [periodEmployees, setPeriodEmployees] = useState([])
   const [shifts, setShifts] = useState([])
   const [saveMessage, setSaveMessage] = useState('')
+  const [penMode, setPenMode] = useState(false)
 
   const [newEmpName, setNewEmpName] = useState('')
   const [newEmpPosition, setNewEmpPosition] = useState('')
@@ -77,7 +79,6 @@ export default function AdminDashboard() {
     setShifts(sh || [])
   }
 
-  // Daftar lokasi unik dari periode-periode sebelumnya, untuk saran pencarian
   const knownLocations = useMemo(() => {
     const set = new Set(periods.map((p) => p.location).filter(Boolean))
     return Array.from(set)
@@ -95,7 +96,6 @@ export default function AdminDashboard() {
 
     if (error || !newPeriod) return
 
-    // Auto-isi semua karyawan aktif ke periode baru ini
     const activeEmployees = await loadEmployees()
     const rows = activeEmployees
       .filter((emp) => emp.active)
@@ -174,8 +174,19 @@ export default function AdminDashboard() {
     }, { onConflict: 'period_id,employee_id,shift_date' })
   }
 
+  async function toggleCustomHoliday(iso) {
+    const current = activePeriod.custom_holidays || []
+    const updated = current.includes(iso)
+      ? current.filter((d) => d !== iso)
+      : [...current, iso]
+
+    setActivePeriod((prev) => ({ ...prev, custom_holidays: updated }))
+    setPeriods((prev) => prev.map((p) => p.id === activePeriod.id ? { ...p, custom_holidays: updated } : p))
+
+    await supabase.from('jk_periods').update({ custom_holidays: updated }).eq('id', activePeriod.id)
+  }
+
   function handleSavePeriod() {
-    // Pastikan input yang sedang aktif ter-blur dulu supaya nilainya tersimpan
     if (document.activeElement) document.activeElement.blur()
     setSaveMessage('Periode telah tersimpan.')
     setTimeout(() => setSaveMessage(''), 3000)
@@ -204,7 +215,6 @@ export default function AdminDashboard() {
 
   if (checkingAuth) return <div className="p-8 text-slate-400">Memuat...</div>
 
-  // Hitung nomor urut berkelanjutan di seluruh grup
   let runningNumber = 0
 
   return (
@@ -299,6 +309,15 @@ export default function AdminDashboard() {
               >
                 💾 Simpan Periode
               </button>
+              <button
+                onClick={() => setPenMode((v) => !v)}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold border-2 ${penMode ? 'bg-red-500 text-white border-red-500' : 'bg-white text-red-500 border-red-400'}`}
+              >
+                🖊️ {penMode ? 'Mode Tanggal Merah: Aktif' : 'Tandai Tanggal Merah'}
+              </button>
+              {penMode && (
+                <span className="text-xs text-red-500">Klik kolom tanggal di tabel untuk menandai/membatalkan.</span>
+              )}
               {saveMessage && (
                 <span className="text-sm text-green-600 font-medium">✓ {saveMessage}</span>
               )}
@@ -319,9 +338,17 @@ export default function AdminDashboard() {
                       <th className="border border-slate-400 px-2 py-1 bg-slate-100 w-8">NO</th>
                       <th className="border border-slate-400 px-2 py-1 bg-slate-100 min-w-[140px]">NAMA</th>
                       {dates.map((d) => {
+                        const iso = d.toISOString().slice(0, 10)
                         const isWeekend = d.getDay() === 0 || d.getDay() === 6
+                        const isCustom = (activePeriod.custom_holidays || []).includes(iso)
+                        const holiday = isHoliday(d) || isCustom
+                        const cellClass = holiday ? 'bg-red-200' : isWeekend ? 'bg-weekend' : 'bg-slate-100'
                         return (
-                          <th key={d.toISOString()} className={`border border-slate-400 px-1 py-1 w-7 ${isWeekend ? 'bg-weekend' : 'bg-slate-100'}`}>
+                          <th
+                            key={iso}
+                            onClick={() => penMode && toggleCustomHoliday(iso)}
+                            className={`border border-slate-400 px-1 py-1 w-7 ${cellClass} ${penMode ? 'cursor-pointer hover:bg-red-300' : ''}`}
+                          >
                             {d.getDate()}
                           </th>
                         )
@@ -349,9 +376,12 @@ export default function AdminDashboard() {
                               {dates.map((d) => {
                                 const iso = d.toISOString().slice(0, 10)
                                 const isWeekend = d.getDay() === 0 || d.getDay() === 6
+                                const isCustom = (activePeriod.custom_holidays || []).includes(iso)
+                                const holiday = isHoliday(d) || isCustom
+                                const cellClass = holiday ? 'bg-red-100' : isWeekend ? 'bg-weekend' : ''
                                 const shift = shifts.find((s) => s.employee_id === pe.employee_id && s.shift_date === iso)
                                 return (
-                                  <td key={iso} className={`border border-slate-400 p-0 ${isWeekend ? 'bg-weekend' : ''}`}>
+                                  <td key={iso} className={`border border-slate-400 p-0 ${cellClass}`}>
                                     <input
                                       defaultValue={shift?.code || ''}
                                       onBlur={(e) => updateShiftCode(pe.employee_id, iso, e.target.value)}
@@ -392,4 +422,4 @@ export default function AdminDashboard() {
       </div>
     </div>
   )
-                            }
+  }
