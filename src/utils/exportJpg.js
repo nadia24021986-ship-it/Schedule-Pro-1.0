@@ -5,6 +5,11 @@ export async function exportElementAsJpg(elementRef, filename) {
   const canvas = await html2canvas(elementRef.current, {
     scale: 2,
     backgroundColor: '#ffffff',
+    onclone: (clonedDoc) => {
+      clonedDoc.querySelectorAll('.no-export').forEach((el) => {
+        el.style.display = 'none'
+      })
+    },
   })
   const link = document.createElement('a')
   link.download = `${filename}.jpg`
