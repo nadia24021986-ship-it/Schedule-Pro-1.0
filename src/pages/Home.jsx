@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient.js'
+import { isHoliday } from '../utils/holidays.js'
 
 function dateRange(start, end) {
   const dates = []
@@ -141,10 +142,13 @@ export default function Home() {
                     const iso = d.toISOString().slice(0, 10)
                     const shift = shifts.find((s) => s.shift_date === iso)
                     const isWeekend = d.getDay() === 0 || d.getDay() === 6
+                    const isCustom = (period.custom_holidays || []).includes(iso)
+                    const holiday = isHoliday(d) || isCustom
+                    const cellClass = holiday ? 'bg-red-100' : isWeekend ? 'bg-weekend' : 'bg-slate-50'
                     return (
                       <div
                         key={iso}
-                        className={`rounded-lg p-2 text-center ${isWeekend ? 'bg-weekend' : 'bg-slate-50'}`}
+                        className={`rounded-lg p-2 text-center ${cellClass}`}
                       >
                         <p className="text-[10px] text-slate-400">{d.getDate()}</p>
                         <p className="font-bold mono text-sm text-ink">{shift?.code || '-'}</p>
@@ -187,4 +191,4 @@ export default function Home() {
       )}
     </div>
   )
-}
+      }
