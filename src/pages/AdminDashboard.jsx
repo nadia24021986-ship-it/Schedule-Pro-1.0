@@ -112,8 +112,48 @@ export default function AdminDashboard() {
     setShifts(sh || [])
   }
 
-  async function autoFillEmployees(scheduleId) {
+  // Cari susunan karyawan (nama, jabatan, urutan) dari jadwal terakhir dengan lokasi yang sama
+  async function getStructureTemplate(location) {
+    const { data: last } = await supabase
+      .from('jk_schedules')
+      .select('id')
+      .eq('location', location)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (!last) return null
+
+    const { data: se } = await supabase
+      .from('jk_schedule_employees')
+      .select('employee_id, sort_order')
+      .eq('schedule_id', last.id)
+      .order('sort_order')
+    return se && se.length > 0 ? se : null
+  }
+
+  async function autoFillEmployees(scheduleId, location) {
     const activeEmployees = await loadEmployees()
+    const activeIds = new Set(activeEmployees.filter((e) => e.active).map((e) => e.id))
+
+    // Coba pakai susunan karyawan dari lokasi yang sama sebelumnya
+    const template = location ? await getStructureTemplate(location) : null
+
+    if (template) {
+      const rows = template
+        .filter((t) => activeIds.has(t.employee_id))
+        .map((t) => ({
+          schedule_id: scheduleId,
+          employee_id: t.employee_id,
+          sort_order: t.sort_order,
+          keterangan: '',
+        }))
+      if (rows.length > 0) {
+        await supabase.from('jk_schedule_employees').insert(rows)
+        return
+      }
+    }
+
+    // Fallback: belum ada riwayat lokasi ini, isi semua karyawan aktif
     const rows = activeEmployees
       .filter((emp) => emp.active)
       .map((emp, idx) => ({
@@ -145,7 +185,7 @@ export default function AdminDashboard() {
       .single()
     if (schError || !newSchedule) { alert(schError?.message || 'Gagal membuat lokasi'); return }
 
-    await autoFillEmployees(newSchedule.id)
+    await autoFillEmployees(newSchedule.id, npLocation)
 
     setShowNewPeriod(false)
     setNpTitle(''); setNpLocation(''); setNpStart(''); setNpEnd('')
@@ -164,7 +204,7 @@ export default function AdminDashboard() {
       .single()
     if (error || !newSchedule) { alert(error?.message || 'Gagal menambah lokasi'); return }
 
-    await autoFillEmployees(newSchedule.id)
+    await autoFillEmployees(newSchedule.id, nsLocation)
 
     setShowNewSchedule(false)
     setNsLocation('')
@@ -333,7 +373,7 @@ export default function AdminDashboard() {
               <input type="date" value={npStart} onChange={(e) => setNpStart(e.target.value)} className="border rounded px-2 py-1.5 text-sm" />
               <input type="date" value={npEnd} onChange={(e) => setNpEnd(e.target.value)} className="border rounded px-2 py-1.5 text-sm" />
               <p className="col-span-2 text-xs text-slate-400">
-                Satu periode bisa punya beberapa lokasi — lokasi lain bisa ditambahkan setelah ini dibuat.
+                Kalau lokasi ini sudah pernah dipakai, susunan karyawan (nama, jabatan, urutan) otomatis dipakai lagi — kolom shift & keterangan dikosongkan, tanggal mengikuti periode baru.
               </p>
               <button className="col-span-2 bg-ink text-white rounded py-1.5 text-sm font-medium">Simpan Periode</button>
             </form>
@@ -532,4 +572,4 @@ export default function AdminDashboard() {
       </div>
     </div>
   )
-      }
+}
