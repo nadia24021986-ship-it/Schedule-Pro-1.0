@@ -23,20 +23,25 @@ export default function AdminDashboard() {
   const [employees, setEmployees] = useState([])
   const [periods, setPeriods] = useState([])
   const [activePeriod, setActivePeriod] = useState(null)
-  const [periodEmployees, setPeriodEmployees] = useState([])
+  const [schedules, setSchedules] = useState([])
+  const [activeSchedule, setActiveSchedule] = useState(null)
+  const [scheduleEmployees, setScheduleEmployees] = useState([])
   const [shifts, setShifts] = useState([])
   const [saveMessage, setSaveMessage] = useState('')
   const [penMode, setPenMode] = useState(false)
+  const [allLocations, setAllLocations] = useState([])
 
   const [newEmpName, setNewEmpName] = useState('')
   const [newEmpPosition, setNewEmpPosition] = useState('')
-  const [addExistingId, setAddExistingId] = useState('')
 
   const [showNewPeriod, setShowNewPeriod] = useState(false)
   const [npTitle, setNpTitle] = useState('')
   const [npLocation, setNpLocation] = useState('')
   const [npStart, setNpStart] = useState('')
   const [npEnd, setNpEnd] = useState('')
+
+  const [showNewSchedule, setShowNewSchedule] = useState(false)
+  const [nsLocation, setNsLocation] = useState('')
 
   useEffect(() => {
     const isAuthed = localStorage.getItem('jk_admin_auth') === 'true'
@@ -47,6 +52,7 @@ export default function AdminDashboard() {
     setCheckingAuth(false)
     loadEmployees()
     loadPeriods()
+    loadAllLocations()
   }, [])
 
   async function loadEmployees() {
@@ -55,34 +61,71 @@ export default function AdminDashboard() {
     return data || []
   }
 
+  async function loadAllLocations() {
+    const { data } = await supabase.from('jk_schedules').select('location')
+    const set = new Set((data || []).map((s) => s.location).filter(Boolean))
+    setAllLocations(Array.from(set))
+  }
+
   async function loadPeriods() {
     const { data } = await supabase.from('jk_periods').select('*').order('start_date', { ascending: false })
     setPeriods(data || [])
     if (data && data.length > 0) {
       selectPeriod(data[0])
+    } else {
+      setActivePeriod(null)
+      setSchedules([])
+      setActiveSchedule(null)
     }
   }
 
   async function selectPeriod(period) {
     setActivePeriod(period)
-    const { data: pe } = await supabase
-      .from('jk_period_employees')
-      .select('*, jk_employees(*)')
+    const { data: sc } = await supabase
+      .from('jk_schedules')
+      .select('*')
       .eq('period_id', period.id)
+      .order('created_at')
+    setSchedules(sc || [])
+    if (sc && sc.length > 0) {
+      selectSchedule(sc[0])
+    } else {
+      setActiveSchedule(null)
+      setScheduleEmployees([])
+      setShifts([])
+    }
+  }
+
+  async function selectSchedule(schedule) {
+    setActiveSchedule(schedule)
+    const { data: se } = await supabase
+      .from('jk_schedule_employees')
+      .select('*, jk_employees(*)')
+      .eq('schedule_id', schedule.id)
       .order('sort_order')
-    setPeriodEmployees(pe || [])
+    setScheduleEmployees(se || [])
 
     const { data: sh } = await supabase
       .from('jk_shifts')
       .select('*')
-      .eq('period_id', period.id)
+      .eq('schedule_id', schedule.id)
     setShifts(sh || [])
   }
 
-  const knownLocations = useMemo(() => {
-    const set = new Set(periods.map((p) => p.location).filter(Boolean))
-    return Array.from(set)
-  }, [periods])
+  async function autoFillEmployees(scheduleId) {
+    const activeEmployees = await loadEmployees()
+    const rows = activeEmployees
+      .filter((emp) => emp.active)
+      .map((emp, idx) => ({
+        schedule_id: scheduleId,
+        employee_id: emp.id,
+        sort_order: idx + 1,
+        keterangan: '',
+      }))
+    if (rows.length > 0) {
+      await supabase.from('jk_schedule_employees').insert(rows)
+    }
+  }
 
   async function createPeriod(e) {
     e.preventDefault()
@@ -90,36 +133,78 @@ export default function AdminDashboard() {
 
     const { data: newPeriod, error } = await supabase
       .from('jk_periods')
-      .insert({ title: npTitle, location: npLocation, start_date: npStart, end_date: npEnd })
+      .insert({ title: npTitle, start_date: npStart, end_date: npEnd })
       .select()
       .single()
+    if (error || !newPeriod) { alert(error?.message || 'Gagal membuat periode'); return }
 
-    if (error || !newPeriod) return
+    const { data: newSchedule, error: schError } = await supabase
+      .from('jk_schedules')
+      .insert({ period_id: newPeriod.id, location: npLocation })
+      .select()
+      .single()
+    if (schError || !newSchedule) { alert(schError?.message || 'Gagal membuat lokasi'); return }
 
-    const activeEmployees = await loadEmployees()
-    const rows = activeEmployees
-      .filter((emp) => emp.active)
-      .map((emp, idx) => ({
-        period_id: newPeriod.id,
-        employee_id: emp.id,
-        sort_order: idx + 1,
-        keterangan: '',
-      }))
-
-    if (rows.length > 0) {
-      await supabase.from('jk_period_employees').insert(rows)
-    }
+    await autoFillEmployees(newSchedule.id)
 
     setShowNewPeriod(false)
     setNpTitle(''); setNpLocation(''); setNpStart(''); setNpEnd('')
-    const { data: updated } = await supabase.from('jk_periods').select('*').order('start_date', { ascending: false })
-    setPeriods(updated || [])
-    selectPeriod(newPeriod)
+    await loadAllLocations()
+    await loadPeriods()
+  }
+
+  async function createSchedule(e) {
+    e.preventDefault()
+    if (!nsLocation || !activePeriod) return
+
+    const { data: newSchedule, error } = await supabase
+      .from('jk_schedules')
+      .insert({ period_id: activePeriod.id, location: nsLocation })
+      .select()
+      .single()
+    if (error || !newSchedule) { alert(error?.message || 'Gagal menambah lokasi'); return }
+
+    await autoFillEmployees(newSchedule.id)
+
+    setShowNewSchedule(false)
+    setNsLocation('')
+    await loadAllLocations()
+    const { data: sc } = await supabase
+      .from('jk_schedules')
+      .select('*')
+      .eq('period_id', activePeriod.id)
+      .order('created_at')
+    setSchedules(sc || [])
+    selectSchedule(newSchedule)
+  }
+
+  async function deletePeriod(period) {
+    if (!confirm(`Hapus periode "${period.title}" beserta semua lokasi & jadwal di dalamnya? Tindakan ini tidak bisa dibatalkan.`)) return
+    await supabase.from('jk_periods').delete().eq('id', period.id)
+    await loadPeriods()
+  }
+
+  async function deleteSchedule(schedule) {
+    if (!confirm(`Hapus lokasi "${schedule.location}" beserta seluruh jadwalnya dari periode ini?`)) return
+    await supabase.from('jk_schedules').delete().eq('id', schedule.id)
+    const { data: sc } = await supabase
+      .from('jk_schedules')
+      .select('*')
+      .eq('period_id', activePeriod.id)
+      .order('created_at')
+    setSchedules(sc || [])
+    if (sc && sc.length > 0) {
+      selectSchedule(sc[0])
+    } else {
+      setActiveSchedule(null)
+      setScheduleEmployees([])
+      setShifts([])
+    }
   }
 
   async function createEmployee(e) {
     e.preventDefault()
-    if (!newEmpName.trim()) return
+    if (!newEmpName.trim() || !activeSchedule) return
     const { data, error } = await supabase
       .from('jk_employees')
       .insert({ name: newEmpName.trim(), position: newEmpPosition.trim() })
@@ -128,34 +213,26 @@ export default function AdminDashboard() {
     if (!error) {
       setNewEmpName(''); setNewEmpPosition('')
       await loadEmployees()
-      if (activePeriod) addEmployeeToPeriod(data.id)
+      const maxOrder = scheduleEmployees.reduce((m, se) => Math.max(m, se.sort_order), 0)
+      await supabase.from('jk_schedule_employees').insert({
+        schedule_id: activeSchedule.id,
+        employee_id: data.id,
+        sort_order: maxOrder + 1,
+      })
+      selectSchedule(activeSchedule)
     }
   }
 
-  async function addEmployeeToPeriod(employeeId) {
-    if (!activePeriod || !employeeId) return
-    const maxOrder = periodEmployees.reduce((m, pe) => Math.max(m, pe.sort_order), 0)
-    const { error } = await supabase.from('jk_period_employees').insert({
-      period_id: activePeriod.id,
-      employee_id: employeeId,
-      sort_order: maxOrder + 1,
-    })
-    if (!error) {
-      setAddExistingId('')
-      selectPeriod(activePeriod)
-    }
+  async function removeFromSchedule(se) {
+    if (!confirm(`Hapus ${se.jk_employees.name} dari jadwal ini?`)) return
+    await supabase.from('jk_schedule_employees').delete().eq('id', se.id)
+    await supabase.from('jk_shifts').delete().eq('schedule_id', activeSchedule.id).eq('employee_id', se.employee_id)
+    selectSchedule(activeSchedule)
   }
 
-  async function removeFromPeriod(pe) {
-    if (!confirm(`Hapus ${pe.jk_employees.name} dari jadwal ini?`)) return
-    await supabase.from('jk_period_employees').delete().eq('id', pe.id)
-    await supabase.from('jk_shifts').delete().eq('period_id', activePeriod.id).eq('employee_id', pe.employee_id)
-    selectPeriod(activePeriod)
-  }
-
-  async function updateKeterangan(pe, value) {
-    setPeriodEmployees((prev) => prev.map((p) => p.id === pe.id ? { ...p, keterangan: value } : p))
-    await supabase.from('jk_period_employees').update({ keterangan: value }).eq('id', pe.id)
+  async function updateKeterangan(se, value) {
+    setScheduleEmployees((prev) => prev.map((p) => p.id === se.id ? { ...p, keterangan: value } : p))
+    await supabase.from('jk_schedule_employees').update({ keterangan: value }).eq('id', se.id)
   }
 
   async function updateShiftCode(employeeId, isoDate, code) {
@@ -164,26 +241,26 @@ export default function AdminDashboard() {
       if (exists) {
         return prev.map((s) => s === exists ? { ...s, code } : s)
       }
-      return [...prev, { employee_id: employeeId, shift_date: isoDate, code, period_id: activePeriod.id }]
+      return [...prev, { employee_id: employeeId, shift_date: isoDate, code, schedule_id: activeSchedule.id }]
     })
     await supabase.from('jk_shifts').upsert({
-      period_id: activePeriod.id,
+      schedule_id: activeSchedule.id,
       employee_id: employeeId,
       shift_date: isoDate,
       code,
-    }, { onConflict: 'period_id,employee_id,shift_date' })
+    }, { onConflict: 'schedule_id,employee_id,shift_date' })
   }
 
   async function toggleCustomHoliday(iso) {
-    const current = activePeriod.custom_holidays || []
+    const current = activeSchedule.custom_holidays || []
     const updated = current.includes(iso)
       ? current.filter((d) => d !== iso)
       : [...current, iso]
 
-    setActivePeriod((prev) => ({ ...prev, custom_holidays: updated }))
-    setPeriods((prev) => prev.map((p) => p.id === activePeriod.id ? { ...p, custom_holidays: updated } : p))
+    setActiveSchedule((prev) => ({ ...prev, custom_holidays: updated }))
+    setSchedules((prev) => prev.map((s) => s.id === activeSchedule.id ? { ...s, custom_holidays: updated } : s))
 
-    await supabase.from('jk_periods').update({ custom_holidays: updated }).eq('id', activePeriod.id)
+    await supabase.from('jk_schedules').update({ custom_holidays: updated }).eq('id', activeSchedule.id)
   }
 
   function handleSavePeriod() {
@@ -201,17 +278,13 @@ export default function AdminDashboard() {
 
   const groupedByPosition = useMemo(() => {
     const groups = {}
-    periodEmployees.forEach((pe) => {
-      const pos = pe.jk_employees.position || 'Lainnya'
+    scheduleEmployees.forEach((se) => {
+      const pos = se.jk_employees.position || 'Lainnya'
       if (!groups[pos]) groups[pos] = []
-      groups[pos].push(pe)
+      groups[pos].push(se)
     })
     return groups
-  }, [periodEmployees])
-
-  const availableToAdd = employees.filter(
-    (e) => !periodEmployees.some((pe) => pe.employee_id === e.id)
-  )
+  }, [scheduleEmployees])
 
   if (checkingAuth) return <div className="p-8 text-slate-400">Memuat...</div>
 
@@ -219,13 +292,20 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-100">
-      <div className="bg-ink text-white px-4 py-3 flex items-center justify-between sticky top-0 z-20">
-        <h1 className="font-bold text-sm">Admin — Jadwal Kerja</h1>
-        <button onClick={handleLogout} className="text-xs underline text-slate-300">Keluar</button>
+      <div className="bg-sky-500 text-white px-4 py-3 flex items-center justify-between sticky top-0 z-20 shadow">
+        <div>
+          <p className="font-bold text-sm leading-tight">Schedule Pro 1.0</p>
+          <p className="text-[11px] text-sky-100">hendrosapp.com</p>
+        </div>
+        <div className="text-right">
+          <p className="text-sm font-semibold">Admin</p>
+          <button onClick={handleLogout} className="text-[11px] underline text-sky-100">Keluar</button>
+        </div>
       </div>
 
       <div className="p-4 max-w-full overflow-x-auto">
 
+        {/* Periode */}
         <div className="bg-white rounded-xl shadow p-4 mb-4">
           <div className="flex items-center justify-between mb-3">
             <p className="font-semibold text-ink text-sm">Periode Jadwal</p>
@@ -239,25 +319,21 @@ export default function AdminDashboard() {
 
           {showNewPeriod && (
             <form onSubmit={createPeriod} className="grid grid-cols-2 gap-2 mb-3 bg-slate-50 p-3 rounded-lg">
-              <input placeholder="Judul (mis. 21 Juli - 20 Agustus 2026)" value={npTitle} onChange={(e) => setNpTitle(e.target.value)} className="col-span-2 border rounded px-2 py-1.5 text-sm" />
-
+              <input placeholder="Judul (mis. 20 Juli - 20 Agustus 2026)" value={npTitle} onChange={(e) => setNpTitle(e.target.value)} className="col-span-2 border rounded px-2 py-1.5 text-sm" />
               <input
                 list="location-suggestions"
-                placeholder="Cari / ketik lokasi"
+                placeholder="Lokasi pertama (mis. Tomaco)"
                 value={npLocation}
                 onChange={(e) => setNpLocation(e.target.value)}
                 className="col-span-2 border rounded px-2 py-1.5 text-sm"
               />
               <datalist id="location-suggestions">
-                {knownLocations.map((loc) => (
-                  <option key={loc} value={loc} />
-                ))}
+                {allLocations.map((loc) => (<option key={loc} value={loc} />))}
               </datalist>
-
               <input type="date" value={npStart} onChange={(e) => setNpStart(e.target.value)} className="border rounded px-2 py-1.5 text-sm" />
               <input type="date" value={npEnd} onChange={(e) => setNpEnd(e.target.value)} className="border rounded px-2 py-1.5 text-sm" />
               <p className="col-span-2 text-xs text-slate-400">
-                Semua karyawan aktif akan otomatis dimasukkan ke periode ini — tinggal isi kode shift-nya.
+                Satu periode bisa punya beberapa lokasi — lokasi lain bisa ditambahkan setelah ini dibuat.
               </p>
               <button className="col-span-2 bg-ink text-white rounded py-1.5 text-sm font-medium">Simpan Periode</button>
             </form>
@@ -265,161 +341,195 @@ export default function AdminDashboard() {
 
           <div className="flex flex-wrap gap-2">
             {periods.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => selectPeriod(p)}
-                className={`text-xs px-3 py-1.5 rounded-full border ${activePeriod?.id === p.id ? 'bg-ink text-white border-ink' : 'border-slate-300 text-slate-600'}`}
-              >
-                {p.title} · {p.location}
-              </button>
+              <div key={p.id} className={`flex items-center rounded-full border text-xs ${activePeriod?.id === p.id ? 'bg-ink text-white border-ink' : 'border-slate-300 text-slate-600'}`}>
+                <button onClick={() => selectPeriod(p)} className="px-3 py-1.5">
+                  {p.title}
+                </button>
+                <button onClick={() => deletePeriod(p)} className={`pr-2.5 ${activePeriod?.id === p.id ? 'text-red-300' : 'text-red-400'}`}>✕</button>
+              </div>
             ))}
+            {periods.length === 0 && <p className="text-xs text-slate-400">Belum ada periode. Buat periode baru dulu.</p>}
           </div>
         </div>
 
         {activePeriod && (
           <>
+            {/* Lokasi/Schedule dalam periode ini */}
             <div className="bg-white rounded-xl shadow p-4 mb-4">
-              <p className="font-semibold text-ink text-sm mb-3">Kelola Karyawan</p>
-              <form onSubmit={createEmployee} className="flex flex-wrap gap-2 mb-3">
-                <input placeholder="Nama baru" value={newEmpName} onChange={(e) => setNewEmpName(e.target.value)} className="border rounded px-2 py-1.5 text-sm flex-1 min-w-[120px]" />
-                <input placeholder="Jabatan" value={newEmpPosition} onChange={(e) => setNewEmpPosition(e.target.value)} className="border rounded px-2 py-1.5 text-sm flex-1 min-w-[120px]" />
-                <button className="bg-amber-500 text-white px-3 py-1.5 rounded text-sm font-medium">Tambah & Masukkan</button>
-              </form>
-              <div className="flex gap-2">
-                <select value={addExistingId} onChange={(e) => setAddExistingId(e.target.value)} className="border rounded px-2 py-1.5 text-sm flex-1">
-                  <option value="">-- Tambahkan karyawan lama ke periode ini --</option>
-                  {availableToAdd.map((e) => (
-                    <option key={e.id} value={e.id}>{e.name} ({e.position})</option>
-                  ))}
-                </select>
-                <button onClick={() => addEmployeeToPeriod(addExistingId)} className="bg-ink text-white px-3 py-1.5 rounded text-sm">Masukkan</button>
+              <div className="flex items-center justify-between mb-3">
+                <p className="font-semibold text-ink text-sm">Lokasi dalam Periode Ini</p>
+                <button
+                  onClick={() => setShowNewSchedule((v) => !v)}
+                  className="text-xs bg-amber-500 text-white px-3 py-1.5 rounded-lg font-medium"
+                >
+                  + Tambah Lokasi
+                </button>
+              </div>
+
+              {showNewSchedule && (
+                <form onSubmit={createSchedule} className="flex gap-2 mb-3 bg-slate-50 p-3 rounded-lg">
+                  <input
+                    list="location-suggestions"
+                    placeholder="Nama lokasi baru"
+                    value={nsLocation}
+                    onChange={(e) => setNsLocation(e.target.value)}
+                    className="flex-1 border rounded px-2 py-1.5 text-sm"
+                  />
+                  <button className="bg-ink text-white px-3 py-1.5 rounded text-sm font-medium">Tambah</button>
+                </form>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                {schedules.map((s) => (
+                  <div key={s.id} className={`flex items-center rounded-full border text-xs ${activeSchedule?.id === s.id ? 'bg-amber-500 text-white border-amber-500' : 'border-slate-300 text-slate-600'}`}>
+                    <button onClick={() => selectSchedule(s)} className="px-3 py-1.5">{s.location}</button>
+                    <button onClick={() => deleteSchedule(s)} className={`pr-2.5 ${activeSchedule?.id === s.id ? 'text-red-100' : 'text-red-400'}`}>✕</button>
+                  </div>
+                ))}
+                {schedules.length === 0 && <p className="text-xs text-slate-400">Belum ada lokasi di periode ini.</p>}
               </div>
             </div>
 
-            <div className="mb-4 flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => exportElementAsJpg(printRef, `${activePeriod.title}-${activePeriod.location}`)}
-                className="bg-ink text-white px-4 py-2 rounded-lg text-sm font-semibold"
-              >
-                📷 Export JPG
-              </button>
-              <button
-                onClick={handleSavePeriod}
-                className="bg-amber-500 text-white px-4 py-2 rounded-lg text-sm font-semibold"
-              >
-                💾 Simpan Periode
-              </button>
-              <button
-                onClick={() => setPenMode((v) => !v)}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold border-2 ${penMode ? 'bg-red-500 text-white border-red-500' : 'bg-white text-red-500 border-red-400'}`}
-              >
-                🖊️ {penMode ? 'Mode Tanggal Merah: Aktif' : 'Tandai Tanggal Merah'}
-              </button>
-              {penMode && (
-                <span className="text-xs text-red-500">Klik kolom tanggal di tabel untuk menandai/membatalkan.</span>
-              )}
-              {saveMessage && (
-                <span className="text-sm text-green-600 font-medium">✓ {saveMessage}</span>
-              )}
-            </div>
+            {activeSchedule && (
+              <>
+                <div className="bg-white rounded-xl shadow p-4 mb-4">
+                  <p className="font-semibold text-ink text-sm mb-3">Kelola Karyawan</p>
+                  <form onSubmit={createEmployee} className="flex flex-wrap gap-2">
+                    <input placeholder="Nama baru" value={newEmpName} onChange={(e) => setNewEmpName(e.target.value)} className="border rounded px-2 py-1.5 text-sm flex-1 min-w-[120px]" />
+                    <input placeholder="Jabatan" value={newEmpPosition} onChange={(e) => setNewEmpPosition(e.target.value)} className="border rounded px-2 py-1.5 text-sm flex-1 min-w-[120px]" />
+                    <button className="bg-amber-500 text-white px-3 py-1.5 rounded text-sm font-medium">Tambah & Masukkan</button>
+                  </form>
+                </div>
 
-            <div className="overflow-x-auto bg-white rounded-xl shadow">
-              <div ref={printRef} className="p-6 bg-white min-w-max">
-                <h2 className="text-center font-bold text-ink text-base">
-                  JADWAL KERJA PERSONEL CATERING {activePeriod.title.toUpperCase()}
-                </h2>
-                <h3 className="text-center font-bold text-ink text-sm mb-4">
-                  {activePeriod.location.toUpperCase()}
-                </h3>
+                <div className="mb-4 flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => exportElementAsJpg(printRef, `${activePeriod.title}-${activeSchedule.location}`)}
+                    className="bg-ink text-white px-4 py-2 rounded-lg text-sm font-semibold"
+                  >
+                    📷 Export JPG
+                  </button>
+                  <button
+                    onClick={handleSavePeriod}
+                    className="bg-amber-500 text-white px-4 py-2 rounded-lg text-sm font-semibold"
+                  >
+                    💾 Simpan Periode
+                  </button>
+                  <button
+                    onClick={() => setPenMode((v) => !v)}
+                    className={`px-4 py-2 rounded-lg text-sm font-semibold border-2 ${penMode ? 'bg-red-500 text-white border-red-500' : 'bg-white text-red-500 border-red-400'}`}
+                  >
+                    🖊️ {penMode ? 'Mode Tanggal Merah: Aktif' : 'Tandai Tanggal Merah'}
+                  </button>
+                  {penMode && (
+                    <span className="text-xs text-red-500">Klik kolom tanggal di tabel untuk menandai/membatalkan.</span>
+                  )}
+                  {saveMessage && (
+                    <span className="text-sm text-green-600 font-medium">✓ {saveMessage}</span>
+                  )}
+                </div>
 
-                <table className="border-collapse text-xs">
-                  <thead>
-                    <tr>
-                      <th className="border border-slate-400 px-2 py-1 bg-slate-100 w-8">NO</th>
-                      <th className="border border-slate-400 px-2 py-1 bg-slate-100 min-w-[140px]">NAMA</th>
-                      {dates.map((d) => {
-                        const iso = d.toISOString().slice(0, 10)
-                        const isWeekend = d.getDay() === 0 || d.getDay() === 6
-                        const isCustom = (activePeriod.custom_holidays || []).includes(iso)
-                        const holiday = isHoliday(d) || isCustom
-                        const cellClass = holiday ? 'bg-red-200' : isWeekend ? 'bg-weekend' : 'bg-slate-100'
-                        return (
-                          <th
-                            key={iso}
-                            onClick={() => penMode && toggleCustomHoliday(iso)}
-                            className={`border border-slate-400 px-1 py-1 w-7 ${cellClass} ${penMode ? 'cursor-pointer hover:bg-red-300' : ''}`}
-                          >
-                            {d.getDate()}
-                          </th>
-                        )
-                      })}
-                      <th className="border border-slate-400 px-2 py-1 bg-slate-100 min-w-[120px]">KETERANGAN</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(groupedByPosition).map(([position, list]) => (
-                      <>
-                        <tr key={position}>
-                          <td colSpan={dates.length + 3} className="border border-slate-400 px-2 py-1 font-bold bg-slate-50 italic">
-                            {position}
-                          </td>
+                <div className="overflow-x-auto bg-white rounded-xl shadow">
+                  <div ref={printRef} className="p-6 bg-white min-w-max">
+                    <h2 className="text-center font-bold text-ink text-lg">
+                      JADWAL KERJA PERSONEL CATERING {activePeriod.title.toUpperCase()}
+                    </h2>
+                    <h3 className="text-center font-bold text-ink text-base mb-4">
+                      {activeSchedule.location.toUpperCase()}
+                    </h3>
+
+                    <table className="border-collapse text-sm">
+                      <thead>
+                        <tr>
+                          <th className="border-2 border-slate-500 px-2 py-2 bg-slate-200 text-slate-800 w-8">NO</th>
+                          <th className="border-2 border-slate-500 px-2 py-2 bg-slate-200 text-slate-800 min-w-[150px]">NAMA</th>
+                          {dates.map((d) => {
+                            const iso = d.toISOString().slice(0, 10)
+                            const isWeekend = d.getDay() === 0 || d.getDay() === 6
+                            const isCustom = (activeSchedule.custom_holidays || []).includes(iso)
+                            const holiday = isHoliday(d) || isCustom
+                            const cellClass = holiday ? 'bg-red-200' : isWeekend ? 'bg-weekend' : 'bg-slate-200'
+                            return (
+                              <th
+                                key={iso}
+                                onClick={() => penMode && toggleCustomHoliday(iso)}
+                                className={`border-2 border-slate-500 px-1 py-2 w-8 text-slate-800 ${cellClass} ${penMode ? 'cursor-pointer hover:bg-red-300' : ''}`}
+                              >
+                                {d.getDate()}
+                              </th>
+                            )
+                          })}
+                          <th className="border-2 border-slate-500 px-2 py-2 bg-slate-200 text-slate-800 min-w-[130px]">KETERANGAN</th>
                         </tr>
-                        {list.map((pe) => {
-                          runningNumber += 1
-                          return (
-                            <tr key={pe.id}>
-                              <td className="border border-slate-400 text-center">{runningNumber}</td>
-                              <td className="border border-slate-400 px-2 py-1 flex items-center justify-between gap-1">
-                                <span>{pe.jk_employees.name}</span>
-                                <button onClick={() => removeFromPeriod(pe)} className="text-red-400 text-[10px]">✕</button>
-                              </td>
-                              {dates.map((d) => {
-                                const iso = d.toISOString().slice(0, 10)
-                                const isWeekend = d.getDay() === 0 || d.getDay() === 6
-                                const isCustom = (activePeriod.custom_holidays || []).includes(iso)
-                                const holiday = isHoliday(d) || isCustom
-                                const cellClass = holiday ? 'bg-red-100' : isWeekend ? 'bg-weekend' : ''
-                                const shift = shifts.find((s) => s.employee_id === pe.employee_id && s.shift_date === iso)
-                                return (
-                                  <td key={iso} className={`border border-slate-400 p-0 ${cellClass}`}>
-                                    <input
-                                      defaultValue={shift?.code || ''}
-                                      onBlur={(e) => updateShiftCode(pe.employee_id, iso, e.target.value)}
-                                      className="w-7 text-center bg-transparent outline-none py-1 mono"
-                                    />
-                                  </td>
-                                )
-                              })}
-                              <td className="border border-slate-400 p-0">
-                                <input
-                                  defaultValue={pe.keterangan || ''}
-                                  onBlur={(e) => updateKeterangan(pe, e.target.value)}
-                                  className="w-full px-2 py-1 outline-none bg-transparent"
-                                />
+                      </thead>
+                      <tbody>
+                        {Object.entries(groupedByPosition).map(([position, list]) => (
+                          <>
+                            <tr key={position}>
+                              <td colSpan={dates.length + 3} className="border-2 border-slate-500 px-2 py-1.5 font-bold bg-slate-100 text-slate-800 italic">
+                                {position}
                               </td>
                             </tr>
-                          )
-                        })}
-                      </>
-                    ))}
-                  </tbody>
-                </table>
+                            {list.map((se) => {
+                              runningNumber += 1
+                              return (
+                                <tr key={se.id}>
+                                  <td className="border-2 border-slate-500 text-center text-slate-800 font-medium">{runningNumber}</td>
+                                  <td className="border-2 border-slate-500 px-2 py-1.5 flex items-center justify-between gap-1 text-slate-800 font-medium">
+                                    <span>{se.jk_employees.name}</span>
+                                    <button onClick={() => removeFromSchedule(se)} className="text-red-400 text-[10px]">✕</button>
+                                  </td>
+                                  {dates.map((d) => {
+                                    const iso = d.toISOString().slice(0, 10)
+                                    const isWeekend = d.getDay() === 0 || d.getDay() === 6
+                                    const isCustom = (activeSchedule.custom_holidays || []).includes(iso)
+                                    const holiday = isHoliday(d) || isCustom
+                                    const cellClass = holiday ? 'bg-red-100' : isWeekend ? 'bg-weekend' : ''
+                                    const shift = shifts.find((s) => s.employee_id === se.employee_id && s.shift_date === iso)
+                                    return (
+                                      <td key={iso} className={`border-2 border-slate-500 p-0 ${cellClass}`}>
+                                        <input
+                                          defaultValue={shift?.code || ''}
+                                          onBlur={(e) => updateShiftCode(se.employee_id, iso, e.target.value)}
+                                          className="w-8 text-center bg-transparent outline-none py-1.5 mono font-bold text-slate-900"
+                                        />
+                                      </td>
+                                    )
+                                  })}
+                                  <td className="border-2 border-slate-500 p-0">
+                                    <input
+                                      defaultValue={se.keterangan || ''}
+                                      onBlur={(e) => updateKeterangan(se, e.target.value)}
+                                      className="w-full px-2 py-1.5 outline-none bg-transparent text-slate-800"
+                                    />
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </>
+                        ))}
+                      </tbody>
+                    </table>
 
-                <div className="flex justify-end gap-10 mt-10 text-xs">
-                  <div className="text-center">
-                    <p className="mb-10">Diperiksa,</p>
-                    <p className="border-t border-slate-400 pt-1 w-24">( &nbsp; )</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="mb-10">Disetujui,</p>
-                    <p className="border-t border-slate-400 pt-1 w-24">( &nbsp; )</p>
+                    <div className="flex justify-between items-end mt-10">
+                      <p className="text-[11px] text-slate-400">hendrosapp.com | Schedule Pro 1.0</p>
+                      <div className="flex gap-10 text-sm">
+                        <div className="text-center">
+                          <p className="mb-10">Diperiksa,</p>
+                          <p className="border-t border-slate-400 pt-1 w-24">( &nbsp; )</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="mb-10">Disetujui,</p>
+                          <p className="border-t border-slate-400 pt-1 w-24">( &nbsp; )</p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
+              </>
+            )}
           </>
         )}
       </div>
     </div>
   )
-  }
+      }
