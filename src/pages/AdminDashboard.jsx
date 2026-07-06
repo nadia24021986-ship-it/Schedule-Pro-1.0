@@ -135,7 +135,6 @@ export default function AdminDashboard() {
     const activeEmployees = await loadEmployees()
     const activeIds = new Set(activeEmployees.filter((e) => e.active).map((e) => e.id))
 
-    // Coba pakai susunan karyawan dari lokasi yang sama sebelumnya
     const template = location ? await getStructureTemplate(location) : null
 
     if (template) {
@@ -153,7 +152,6 @@ export default function AdminDashboard() {
       }
     }
 
-    // Fallback: belum ada riwayat lokasi ini, isi semua karyawan aktif
     const rows = activeEmployees
       .filter((emp) => emp.active)
       .map((emp, idx) => ({
@@ -345,7 +343,6 @@ export default function AdminDashboard() {
 
       <div className="p-4 max-w-full overflow-x-auto">
 
-        {/* Periode */}
         <div className="bg-white rounded-xl shadow p-4 mb-4">
           <div className="flex items-center justify-between mb-3">
             <p className="font-semibold text-ink text-sm">Periode Jadwal</p>
@@ -394,7 +391,6 @@ export default function AdminDashboard() {
 
         {activePeriod && (
           <>
-            {/* Lokasi/Schedule dalam periode ini */}
             <div className="bg-white rounded-xl shadow p-4 mb-4">
               <div className="flex items-center justify-between mb-3">
                 <p className="font-semibold text-ink text-sm">Lokasi dalam Periode Ini</p>
@@ -516,7 +512,7 @@ export default function AdminDashboard() {
                                   <td className="border-2 border-slate-500 text-center text-slate-800 font-medium">{runningNumber}</td>
                                   <td className="border-2 border-slate-500 px-2 py-1.5 flex items-center justify-between gap-1 text-slate-800 font-medium">
                                     <span>{se.jk_employees.name}</span>
-                                    <button onClick={() => removeFromSchedule(se)} className="text-red-400 text-[10px]">✕</button>
+                                    <button onClick={() => removeFromSchedule(se)} className="no-export text-red-400 text-[10px]">✕</button>
                                   </td>
                                   {dates.map((d) => {
                                     const iso = d.toISOString().slice(0, 10)
@@ -572,4 +568,4 @@ export default function AdminDashboard() {
       </div>
     </div>
   )
-}
+        }
