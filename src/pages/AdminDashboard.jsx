@@ -29,6 +29,7 @@ export default function AdminDashboard() {
   const [shifts, setShifts] = useState([])
   const [saveMessage, setSaveMessage] = useState('')
   const [penMode, setPenMode] = useState(false)
+  const [showTable, setShowTable] = useState(true)
   const [allLocations, setAllLocations] = useState([])
 
   const [newEmpName, setNewEmpName] = useState('')
@@ -81,6 +82,7 @@ export default function AdminDashboard() {
 
   async function selectPeriod(period) {
     setActivePeriod(period)
+    setShowTable(true)
     const { data: sc } = await supabase
       .from('jk_schedules')
       .select('*')
@@ -98,6 +100,7 @@ export default function AdminDashboard() {
 
   async function selectSchedule(schedule) {
     setActiveSchedule(schedule)
+    setShowTable(true)
     const { data: se } = await supabase
       .from('jk_schedule_employees')
       .select('*, jk_employees(*)')
@@ -186,6 +189,7 @@ export default function AdminDashboard() {
 
     setShowNewPeriod(false)
     setNpTitle(''); setNpLocation(''); setNpStart(''); setNpEnd('')
+    setShowTable(true)
     await loadAllLocations()
     await loadPeriods()
   }
@@ -205,6 +209,7 @@ export default function AdminDashboard() {
 
     setShowNewSchedule(false)
     setNsLocation('')
+    setShowTable(true)
     await loadAllLocations()
     const { data: sc } = await supabase
       .from('jk_schedules')
@@ -303,6 +308,7 @@ export default function AdminDashboard() {
   function handleSavePeriod() {
     if (document.activeElement) document.activeElement.blur()
     setSaveMessage('Periode telah tersimpan.')
+    setShowTable(false)
     setTimeout(() => setSaveMessage(''), 3000)
   }
 
@@ -465,6 +471,14 @@ export default function AdminDashboard() {
                   )}
                 </div>
 
+                {!showTable && (
+                  <div className="bg-white rounded-xl shadow p-6 text-center mb-4">
+                    <p className="text-sm text-slate-500 mb-2">Tabel disembunyikan untuk hemat ruang.</p>
+                    <p className="text-xs text-slate-400">Klik tombol periode atau lokasi di atas untuk membuka & melanjutkan mengisi jadwal ini.</p>
+                  </div>
+                )}
+
+                {showTable && (
                 <div className="overflow-x-auto bg-white rounded-xl shadow">
                   <div ref={printRef} className="p-6 bg-white min-w-max">
                     <h2 className="text-center font-bold text-ink text-lg">
@@ -562,6 +576,7 @@ export default function AdminDashboard() {
                     </div>
                   </div>
                 </div>
+                )}
               </>
             )}
           </>
