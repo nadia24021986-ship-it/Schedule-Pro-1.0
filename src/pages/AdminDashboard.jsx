@@ -417,7 +417,9 @@ export default function AdminDashboard() {
               <div className="flex flex-wrap gap-2">
                 {schedules.map((s) => (
                   <div key={s.id} className={`flex items-center rounded-full border text-xs ${activeSchedule?.id === s.id ? 'bg-amber-500 text-white border-amber-500' : 'border-slate-300 text-slate-600'}`}>
-                    <button onClick={() => selectSchedule(s)} className="px-3 py-1.5">{s.location}</button>
+                    <button onClick={() => selectSchedule(s)} className="px-3 py-1.5">
+                      {activePeriod.title} ({s.location.toUpperCase()})
+                    </button>
                     <button onClick={() => deleteSchedule(s)} className={`pr-2.5 ${activeSchedule?.id === s.id ? 'text-red-100' : 'text-red-400'}`}>✕</button>
                   </div>
                 ))}
