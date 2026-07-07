@@ -4,6 +4,14 @@ import { supabase } from '../supabaseClient.js'
 import { exportElementAsJpg } from '../utils/exportJpg.js'
 import { isHoliday } from '../utils/holidays.js'
 
+const BULAN_ID = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
+
+function formatTanggalIndo(dateStr) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr + 'T00:00:00')
+  return `${d.getDate()} ${BULAN_ID[d.getMonth()]} ${d.getFullYear()}`
+}
+
 function dateRange(start, end) {
   const dates = []
   let d = new Date(start)
@@ -361,7 +369,7 @@ export default function AdminDashboard() {
 
           {showNewPeriod && (
             <form onSubmit={createPeriod} className="grid grid-cols-2 gap-2 mb-3 bg-slate-50 p-3 rounded-lg">
-              <input placeholder="Judul (mis. 20 Juli - 20 Agustus 2026)" value={npTitle} onChange={(e) => setNpTitle(e.target.value)} className="col-span-2 border rounded px-2 py-1.5 text-sm" />
+              <input placeholder="Judul (otomatis terisi dari tanggal, atau ketik manual)" value={npTitle} onChange={(e) => setNpTitle(e.target.value)} className="col-span-2 border rounded px-2 py-1.5 text-sm" />
               <input
                 list="location-suggestions"
                 placeholder="Lokasi pertama (mis. Tomaco)"
@@ -372,8 +380,26 @@ export default function AdminDashboard() {
               <datalist id="location-suggestions">
                 {allLocations.map((loc) => (<option key={loc} value={loc} />))}
               </datalist>
-              <input type="date" value={npStart} onChange={(e) => setNpStart(e.target.value)} className="border rounded px-2 py-1.5 text-sm" />
-              <input type="date" value={npEnd} onChange={(e) => setNpEnd(e.target.value)} className="border rounded px-2 py-1.5 text-sm" />
+              <input
+                type="date"
+                value={npStart}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setNpStart(val)
+                  if (val && npEnd) setNpTitle(`${formatTanggalIndo(val)} - ${formatTanggalIndo(npEnd)}`)
+                }}
+                className="border rounded px-2 py-1.5 text-sm"
+              />
+              <input
+                type="date"
+                value={npEnd}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setNpEnd(val)
+                  if (npStart && val) setNpTitle(`${formatTanggalIndo(npStart)} - ${formatTanggalIndo(val)}`)
+                }}
+                className="border rounded px-2 py-1.5 text-sm"
+              />
               <p className="col-span-2 text-xs text-slate-400">
                 Kalau lokasi ini sudah pernah dipakai, susunan karyawan otomatis dipakai lagi — kolom shift & keterangan dikosongkan, tanggal mengikuti periode baru.
               </p>
