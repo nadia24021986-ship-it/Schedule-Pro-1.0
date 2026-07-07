@@ -22,18 +22,19 @@ window.addEventListener('unhandledrejection', (e) => {
   showFatalError(String(e.reason?.message || e.reason), e.reason?.stack)
 })
 
-try {
-  const App = (await import('./App.jsx')).default
-
-  ReactDOM.createRoot(document.getElementById('root')).render(
-    <React.StrictMode>
-      <ErrorBoundary>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
-      </ErrorBoundary>
-    </React.StrictMode>,
-  )
-} catch (err) {
-  showFatalError(err.message, err.stack)
-}
+import('./App.jsx')
+  .then((mod) => {
+    const App = mod.default
+    ReactDOM.createRoot(document.getElementById('root')).render(
+      <React.StrictMode>
+        <ErrorBoundary>
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </ErrorBoundary>
+      </React.StrictMode>,
+    )
+  })
+  .catch((err) => {
+    showFatalError(err.message, err.stack)
+  })
