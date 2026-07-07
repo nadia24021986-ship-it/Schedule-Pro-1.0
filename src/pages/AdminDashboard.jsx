@@ -324,13 +324,20 @@ export default function AdminDashboard() {
     await loadAllLocations()
   }
 
-  async function updateColumnLabel(key, value) {
+  async function updateTitleLine(key, value) {
     if (!value.trim()) return
-    const current = activeSchedule.column_labels || { no: 'NO', nama: 'NAMA', keterangan: 'KETERANGAN' }
-    const updated = { ...current, [key]: value }
-    setActiveSchedule((prev) => ({ ...prev, column_labels: updated }))
-    setSchedules((prev) => prev.map((s) => s.id === activeSchedule.id ? { ...s, column_labels: updated } : s))
-    await supabase.from('jk_schedules').update({ column_labels: updated }).eq('id', activeSchedule.id)
+    setActiveSchedule((prev) => ({ ...prev, [key]: value }))
+    setSchedules((prev) => prev.map((s) => s.id === activeSchedule.id ? { ...s, [key]: value } : s))
+    await supabase.from('jk_schedules').update({ [key]: value }).eq('id', activeSchedule.id)
+  }
+
+  async function updateEmployeeName(se, newName) {
+    if (!newName.trim() || newName === se.jk_employees.name) return
+    await supabase.from('jk_employees').update({ name: newName.trim() }).eq('id', se.employee_id)
+    setScheduleEmployees((prev) => prev.map((s) =>
+      s.id === se.id ? { ...s, jk_employees: { ...s.jk_employees, name: newName.trim() } } : s
+    ))
+    await loadEmployees()
   }
 
   async function updateGroupPosition(oldPos, newPos) {
@@ -523,39 +530,23 @@ export default function AdminDashboard() {
                 {showTable && (
                 <div className="overflow-x-auto bg-white rounded-xl shadow">
                   <div ref={printRef} className="p-6 bg-white min-w-max">
-                    <p className="no-export text-center text-[11px] text-amber-600 mb-1">↕ Judul & lokasi di bawah bisa diketik ulang</p>
-                    <div className="flex items-center justify-center flex-wrap gap-1">
-                      <span className="font-bold text-ink text-lg">JADWAL KERJA PERSONEL CATERING</span>
-                      <input
-                        defaultValue={activePeriod.title.toUpperCase()}
-                        onBlur={(e) => updatePeriodTitle(e.target.value)}
-                        className="font-bold text-ink text-lg bg-transparent outline-none border-b border-dashed border-slate-300 uppercase text-center"
-                        style={{ width: `${Math.max(activePeriod.title.length + 2, 12)}ch` }}
-                      />
-                    </div>
+                    <p className="no-export text-center text-[11px] text-amber-600 mb-1">↕ Judul di bawah bisa diketik ulang bebas</p>
                     <input
-                      defaultValue={activeSchedule.location.toUpperCase()}
-                      onBlur={(e) => updateScheduleLocation(e.target.value)}
-                      className="w-full text-center font-bold text-ink text-base bg-transparent outline-none border-b border-dashed border-slate-300 uppercase mb-4 mt-2 pb-1"
+                      defaultValue={activeSchedule.title_line1 || `JADWAL KERJA PERSONEL CATERING ${activePeriod.title.toUpperCase()}`}
+                      onBlur={(e) => updateTitleLine('title_line1', e.target.value)}
+                      className="w-full text-center font-bold text-ink text-lg bg-transparent outline-none border-b border-dashed border-slate-300 pb-1"
+                    />
+                    <input
+                      defaultValue={activeSchedule.title_line2 || activeSchedule.location.toUpperCase()}
+                      onBlur={(e) => updateTitleLine('title_line2', e.target.value)}
+                      className="w-full text-center font-bold text-ink text-base bg-transparent outline-none border-b border-dashed border-slate-300 mb-4 mt-2 pb-1"
                     />
 
                     <table className="border-collapse text-sm">
                       <thead>
                         <tr>
-                          <th className="border-2 border-slate-500 px-2 py-2 bg-slate-200 text-slate-800 w-8">
-                            <input
-                              defaultValue={activeSchedule.column_labels?.no || 'NO'}
-                              onBlur={(e) => updateColumnLabel('no', e.target.value)}
-                              className="w-full text-center bg-transparent outline-none font-bold"
-                            />
-                          </th>
-                          <th className="border-2 border-slate-500 px-2 py-2 bg-slate-200 text-slate-800 min-w-[150px]">
-                            <input
-                              defaultValue={activeSchedule.column_labels?.nama || 'NAMA'}
-                              onBlur={(e) => updateColumnLabel('nama', e.target.value)}
-                              className="w-full text-center bg-transparent outline-none font-bold"
-                            />
-                          </th>
+                          <th className="border-2 border-slate-500 px-2 py-2 bg-slate-200 text-slate-800 w-8">NO</th>
+                          <th className="border-2 border-slate-500 px-2 py-2 bg-slate-200 text-slate-800 min-w-[150px]">NAMA</th>
                           {dates.map((d) => {
                             const iso = d.toISOString().slice(0, 10)
                             const isWeekend = d.getDay() === 0 || d.getDay() === 6
@@ -572,13 +563,7 @@ export default function AdminDashboard() {
                               </th>
                             )
                           })}
-                          <th className="border-2 border-slate-500 px-2 py-2 bg-slate-200 text-slate-800 min-w-[130px]">
-                            <input
-                              defaultValue={activeSchedule.column_labels?.keterangan || 'KETERANGAN'}
-                              onBlur={(e) => updateColumnLabel('keterangan', e.target.value)}
-                              className="w-full text-center bg-transparent outline-none font-bold"
-                            />
-                          </th>
+                          <th className="border-2 border-slate-500 px-2 py-2 bg-slate-200 text-slate-800 min-w-[130px]">KETERANGAN</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -599,7 +584,11 @@ export default function AdminDashboard() {
                                 <tr key={se.id}>
                                   <td className="border-2 border-slate-500 text-center text-slate-800 font-medium">{runningNumber}</td>
                                   <td className="border-2 border-slate-500 px-2 py-1.5 flex items-center justify-between gap-1 text-slate-800 font-medium">
-                                    <span>{se.jk_employees.name}</span>
+                                    <input
+                                      defaultValue={se.jk_employees.name}
+                                      onBlur={(e) => updateEmployeeName(se, e.target.value)}
+                                      className="flex-1 bg-transparent outline-none font-medium text-slate-800"
+                                    />
                                     <button onClick={() => removeFromSchedule(se)} className="no-export text-red-400 text-[10px]">✕</button>
                                   </td>
                                   {dates.map((d) => {
