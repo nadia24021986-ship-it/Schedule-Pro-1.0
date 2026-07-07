@@ -49,9 +49,6 @@ export default function AdminDashboard() {
   const [npStart, setNpStart] = useState('')
   const [npEnd, setNpEnd] = useState('')
 
-  const [showNewSchedule, setShowNewSchedule] = useState(false)
-  const [nsLocation, setNsLocation] = useState('')
-
   useEffect(() => {
     const isAuthed = localStorage.getItem('jk_admin_auth') === 'true'
     if (!isAuthed) {
@@ -200,32 +197,6 @@ export default function AdminDashboard() {
     setShowTable(true)
     await loadAllLocations()
     await loadPeriods()
-  }
-
-  async function createSchedule(e) {
-    e.preventDefault()
-    if (!nsLocation || !activePeriod) return
-
-    const { data: newSchedule, error } = await supabase
-      .from('jk_schedules')
-      .insert({ period_id: activePeriod.id, location: nsLocation })
-      .select()
-      .single()
-    if (error || !newSchedule) { alert(error?.message || 'Gagal menambah lokasi'); return }
-
-    await autoFillEmployees(newSchedule.id, nsLocation)
-
-    setShowNewSchedule(false)
-    setNsLocation('')
-    setShowTable(true)
-    await loadAllLocations()
-    const { data: sc } = await supabase
-      .from('jk_schedules')
-      .select('*')
-      .eq('period_id', activePeriod.id)
-      .order('created_at')
-    setSchedules(sc || [])
-    selectSchedule(newSchedule)
   }
 
   async function deletePeriod(period) {
@@ -423,28 +394,7 @@ export default function AdminDashboard() {
         {activePeriod && (
           <>
             <div className="bg-white rounded-xl shadow p-4 mb-4">
-              <div className="flex items-center justify-between mb-3">
-                <p className="font-semibold text-ink text-sm">Lokasi dalam Periode Ini</p>
-                <button
-                  onClick={() => setShowNewSchedule((v) => !v)}
-                  className="text-xs bg-amber-500 text-white px-3 py-1.5 rounded-lg font-medium"
-                >
-                  + Tambah Lokasi
-                </button>
-              </div>
-
-              {showNewSchedule && (
-                <form onSubmit={createSchedule} className="flex gap-2 mb-3 bg-slate-50 p-3 rounded-lg">
-                  <input
-                    list="location-suggestions"
-                    placeholder="Nama lokasi baru"
-                    value={nsLocation}
-                    onChange={(e) => setNsLocation(e.target.value)}
-                    className="flex-1 border rounded px-2 py-1.5 text-sm"
-                  />
-                  <button className="bg-ink text-white px-3 py-1.5 rounded text-sm font-medium">Tambah</button>
-                </form>
-              )}
+              <p className="font-semibold text-ink text-sm mb-3">Lokasi dalam Periode Ini</p>
 
               <div className="flex flex-wrap gap-2">
                 {schedules.map((s) => (
