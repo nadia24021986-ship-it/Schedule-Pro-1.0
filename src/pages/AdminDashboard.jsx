@@ -145,8 +145,14 @@ export default function AdminDashboard() {
     const template = location ? await getStructureTemplate(location) : null
 
     if (template) {
+      const seen = new Set()
       const rows = template
         .filter((t) => activeIds.has(t.employee_id))
+        .filter((t) => {
+          if (seen.has(t.employee_id)) return false
+          seen.add(t.employee_id)
+          return true
+        })
         .map((t) => ({
           schedule_id: scheduleId,
           employee_id: t.employee_id,
@@ -226,22 +232,41 @@ export default function AdminDashboard() {
   async function createEmployee(e) {
     e.preventDefault()
     if (!newEmpName.trim() || !activeSchedule) return
-    const { data, error } = await supabase
-      .from('jk_employees')
-      .insert({ name: newEmpName.trim(), position: newEmpPosition.trim() })
-      .select()
-      .single()
-    if (!error) {
-      setNewEmpName(''); setNewEmpPosition('')
+
+    const cleanName = newEmpName.trim()
+
+    // Cek dulu apakah nama ini sudah pernah terdaftar (tidak peduli besar/kecil huruf)
+    const existing = employees.find((emp) => emp.name.trim().toLowerCase() === cleanName.toLowerCase())
+
+    let employeeId = existing?.id
+
+    if (!employeeId) {
+      const { data, error } = await supabase
+        .from('jk_employees')
+        .insert({ name: cleanName, position: newEmpPosition.trim() })
+        .select()
+        .single()
+      if (error) { alert(error.message); return }
+      employeeId = data.id
       await loadEmployees()
-      const maxOrder = scheduleEmployees.reduce((m, se) => Math.max(m, se.sort_order), 0)
-      await supabase.from('jk_schedule_employees').insert({
-        schedule_id: activeSchedule.id,
-        employee_id: data.id,
-        sort_order: maxOrder + 1,
-      })
-      selectSchedule(activeSchedule)
     }
+
+    // Cek apakah karyawan ini sudah ada di jadwal ini juga (hindari duplikat baris)
+    const alreadyInSchedule = scheduleEmployees.some((se) => se.employee_id === employeeId)
+    if (alreadyInSchedule) {
+      alert(`${cleanName} sudah ada di jadwal ini.`)
+      setNewEmpName(''); setNewEmpPosition('')
+      return
+    }
+
+    setNewEmpName(''); setNewEmpPosition('')
+    const maxOrder = scheduleEmployees.reduce((m, se) => Math.max(m, se.sort_order), 0)
+    await supabase.from('jk_schedule_employees').insert({
+      schedule_id: activeSchedule.id,
+      employee_id: employeeId,
+      sort_order: maxOrder + 1,
+    })
+    selectSchedule(activeSchedule)
   }
 
   async function removeFromSchedule(se) {
