@@ -284,6 +284,21 @@ export default function AdminDashboard() {
     await supabase.from('jk_schedules').update({ custom_holidays: updated }).eq('id', activeSchedule.id)
   }
 
+  async function updatePeriodTitle(newTitle) {
+    if (!newTitle.trim() || newTitle === activePeriod.title) return
+    setActivePeriod((prev) => ({ ...prev, title: newTitle }))
+    setPeriods((prev) => prev.map((p) => p.id === activePeriod.id ? { ...p, title: newTitle } : p))
+    await supabase.from('jk_periods').update({ title: newTitle }).eq('id', activePeriod.id)
+  }
+
+  async function updateScheduleLocation(newLocation) {
+    if (!newLocation.trim() || newLocation === activeSchedule.location) return
+    setActiveSchedule((prev) => ({ ...prev, location: newLocation }))
+    setSchedules((prev) => prev.map((s) => s.id === activeSchedule.id ? { ...s, location: newLocation } : s))
+    await supabase.from('jk_schedules').update({ location: newLocation }).eq('id', activeSchedule.id)
+    await loadAllLocations()
+  }
+
   function handleSavePeriod() {
     if (document.activeElement) document.activeElement.blur()
     setSaveMessage('Periode telah tersimpan.')
@@ -457,12 +472,21 @@ export default function AdminDashboard() {
                 {showTable && (
                 <div className="overflow-x-auto bg-white rounded-xl shadow">
                   <div ref={printRef} className="p-6 bg-white min-w-max">
-                    <h2 className="text-center font-bold text-ink text-lg">
-                      JADWAL KERJA PERSONEL CATERING {activePeriod.title.toUpperCase()}
-                    </h2>
-                    <h3 className="text-center font-bold text-ink text-base mb-4">
-                      {activeSchedule.location.toUpperCase()}
-                    </h3>
+                    <p className="no-export text-center text-[11px] text-amber-600 mb-1">↕ Judul & lokasi di bawah bisa diketik ulang</p>
+                    <div className="flex items-center justify-center flex-wrap gap-1">
+                      <span className="font-bold text-ink text-lg">JADWAL KERJA PERSONEL CATERING</span>
+                      <input
+                        defaultValue={activePeriod.title.toUpperCase()}
+                        onBlur={(e) => updatePeriodTitle(e.target.value)}
+                        className="font-bold text-ink text-lg bg-transparent outline-none border-b border-dashed border-slate-300 uppercase text-center"
+                        style={{ width: `${Math.max(activePeriod.title.length + 2, 12)}ch` }}
+                      />
+                    </div>
+                    <input
+                      defaultValue={activeSchedule.location.toUpperCase()}
+                      onBlur={(e) => updateScheduleLocation(e.target.value)}
+                      className="w-full text-center font-bold text-ink text-base bg-transparent outline-none border-b border-dashed border-slate-300 uppercase mb-4 mt-2 pb-1"
+                    />
 
                     <table className="border-collapse text-sm">
                       <thead>
