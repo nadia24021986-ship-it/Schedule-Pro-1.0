@@ -324,6 +324,32 @@ export default function AdminDashboard() {
     await loadAllLocations()
   }
 
+  async function updateColumnLabel(key, value) {
+    if (!value.trim()) return
+    const current = activeSchedule.column_labels || { no: 'NO', nama: 'NAMA', keterangan: 'KETERANGAN' }
+    const updated = { ...current, [key]: value }
+    setActiveSchedule((prev) => ({ ...prev, column_labels: updated }))
+    setSchedules((prev) => prev.map((s) => s.id === activeSchedule.id ? { ...s, column_labels: updated } : s))
+    await supabase.from('jk_schedules').update({ column_labels: updated }).eq('id', activeSchedule.id)
+  }
+
+  async function updateGroupPosition(oldPos, newPos) {
+    if (!newPos.trim() || newPos === oldPos) return
+    const idsToUpdate = scheduleEmployees
+      .filter((se) => (se.jk_employees.position || 'Lainnya') === oldPos)
+      .map((se) => se.employee_id)
+    if (idsToUpdate.length === 0) return
+
+    await supabase.from('jk_employees').update({ position: newPos }).in('id', idsToUpdate)
+
+    setScheduleEmployees((prev) => prev.map((se) =>
+      idsToUpdate.includes(se.employee_id)
+        ? { ...se, jk_employees: { ...se.jk_employees, position: newPos } }
+        : se
+    ))
+    await loadEmployees()
+  }
+
   function handleSavePeriod() {
     if (document.activeElement) document.activeElement.blur()
     setSaveMessage('Periode telah tersimpan.')
@@ -516,8 +542,20 @@ export default function AdminDashboard() {
                     <table className="border-collapse text-sm">
                       <thead>
                         <tr>
-                          <th className="border-2 border-slate-500 px-2 py-2 bg-slate-200 text-slate-800 w-8">NO</th>
-                          <th className="border-2 border-slate-500 px-2 py-2 bg-slate-200 text-slate-800 min-w-[150px]">NAMA</th>
+                          <th className="border-2 border-slate-500 px-2 py-2 bg-slate-200 text-slate-800 w-8">
+                            <input
+                              defaultValue={activeSchedule.column_labels?.no || 'NO'}
+                              onBlur={(e) => updateColumnLabel('no', e.target.value)}
+                              className="w-full text-center bg-transparent outline-none font-bold"
+                            />
+                          </th>
+                          <th className="border-2 border-slate-500 px-2 py-2 bg-slate-200 text-slate-800 min-w-[150px]">
+                            <input
+                              defaultValue={activeSchedule.column_labels?.nama || 'NAMA'}
+                              onBlur={(e) => updateColumnLabel('nama', e.target.value)}
+                              className="w-full text-center bg-transparent outline-none font-bold"
+                            />
+                          </th>
                           {dates.map((d) => {
                             const iso = d.toISOString().slice(0, 10)
                             const isWeekend = d.getDay() === 0 || d.getDay() === 6
@@ -534,7 +572,13 @@ export default function AdminDashboard() {
                               </th>
                             )
                           })}
-                          <th className="border-2 border-slate-500 px-2 py-2 bg-slate-200 text-slate-800 min-w-[130px]">KETERANGAN</th>
+                          <th className="border-2 border-slate-500 px-2 py-2 bg-slate-200 text-slate-800 min-w-[130px]">
+                            <input
+                              defaultValue={activeSchedule.column_labels?.keterangan || 'KETERANGAN'}
+                              onBlur={(e) => updateColumnLabel('keterangan', e.target.value)}
+                              className="w-full text-center bg-transparent outline-none font-bold"
+                            />
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
@@ -542,7 +586,11 @@ export default function AdminDashboard() {
                           <>
                             <tr key={position}>
                               <td colSpan={dates.length + 3} className="border-2 border-slate-500 px-2 py-1.5 font-bold bg-slate-100 text-slate-800 italic">
-                                {position}
+                                <input
+                                  defaultValue={position}
+                                  onBlur={(e) => updateGroupPosition(position, e.target.value)}
+                                  className="w-full bg-transparent outline-none italic font-bold"
+                                />
                               </td>
                             </tr>
                             {list.map((se) => {
